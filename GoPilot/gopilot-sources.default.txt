@@ -1,0 +1,8 @@
+# GoPilot default Skill Sources.
+#
+# Format: one URL per line.  Lines starting with '#' are comments.
+# This file is read only when gopilot.ini has no [SkillSources] section.
+# Edit the live list via Tools > Skill Sources... -- not by changing
+# this file (which is overwritten by app updates).
+
+https://github.com/github/awesome-copilot
