@@ -723,6 +723,21 @@ public partial class MainForm : Form
 
         if (string.IsNullOrEmpty(prompt) && pastedImages.Count == 0) return;
 
+        // Ctrl+Enter bypasses buttonSend.Enabled, so re-check the workspace
+        // here. Sending without a workspace would create a session whose ID
+        // falls back to the literal "GoPilot" prefix and whose
+        // workspaceFolder is permanently blank in gopilot-sessions.json.
+        if (string.IsNullOrEmpty(_copilot.WorkingDirectory))
+        {
+            MessageBox.Show(this,
+                "Open a workspace folder before sending a prompt.\r\n\r\n" +
+                "Use Session > New Session... to pick a folder, or Session > " +
+                "Past Sessions... to resume one.",
+                "No Workspace Open",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
         // Sending while a turn is in flight always interrupts the current turn
         // rather than queueing behind it. Without this guard the SDK silently
         // queues the new prompt at the CLI layer, which the user does not want.
@@ -922,10 +937,17 @@ public partial class MainForm : Form
 
     private async Task SendQuickCommandAsync(string prompt)
     {
-        if (!_copilot.IsConnected)
+        // Both an active connection AND a workspace are required. The CLI
+        // can be connected without a workspace (e.g. after Past Sessions),
+        // which would otherwise let quick commands create sessions with an
+        // empty workspaceFolder in gopilot-sessions.json.
+        if (!_copilot.IsConnected
+            || string.IsNullOrEmpty(_copilot.WorkingDirectory))
         {
-            MessageBox.Show("Open a folder to connect to Copilot first.",
-                "Not Connected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this,
+                "Open a folder to connect to Copilot first.",
+                "Not Connected",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         await DispatchPromptAsync(prompt);
@@ -4165,7 +4187,13 @@ public partial class MainForm : Form
     private void UpdateWorkingState()
     {
         bool working = _pendingCount > 0;
-        buttonSend.Enabled = _copilot.IsConnected;
+        // Send requires both an active CLI connection AND an open workspace.
+        // The CLI can be connected without a workspace (e.g. after browsing
+        // Past Sessions which calls EnsureStartedAsync) -- sending in that
+        // state would create a session whose ID falls back to the literal
+        // "GoPilot" prefix and whose workspaceFolder is permanently blank.
+        buttonSend.Enabled = _copilot.IsConnected
+            && !string.IsNullOrEmpty(_copilot.WorkingDirectory);
         buttonStop.Enabled = working;
 
         string status;
@@ -4215,7 +4243,9 @@ public partial class MainForm : Form
     // to block the UI exclusively
     private void SetSendingState(bool isSending)
     {
-        buttonSend.Enabled = !isSending && _copilot.IsConnected;
+        buttonSend.Enabled = !isSending
+            && _copilot.IsConnected
+            && !string.IsNullOrEmpty(_copilot.WorkingDirectory);
         buttonStop.Enabled = isSending || _pendingCount > 0;
         toolStripStatusLabelConnection.Text = isSending ? "Working…" :
             (_copilot.IsConnected ? "Connected" : "Not connected");
