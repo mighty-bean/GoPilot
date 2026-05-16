@@ -22,6 +22,15 @@ internal sealed class DarkMenuColorTable : ProfessionalColorTable
 	public override Color MenuItemPressedGradientBegin  => Color.FromArgb(96, 96, 96);
 	public override Color MenuItemPressedGradientMiddle => Color.FromArgb(96, 96, 96);
 	public override Color MenuItemPressedGradientEnd    => Color.FromArgb(96, 96, 96);
+
+	// Background painted behind the check glyph on Checked ToolStripMenuItems.
+	// The default ProfessionalColorTable returns the bright system accent color,
+	// which clashes with the dark menu. Use a muted grey one notch brighter than
+	// the dropdown background (56) but well below the hover highlight (96).
+	public override Color CheckBackground          => Color.FromArgb(76, 76, 76);
+	public override Color CheckSelectedBackground  => Color.FromArgb(76, 76, 76);
+	public override Color CheckPressedBackground   => Color.FromArgb(76, 76, 76);
+
 	public override Color MenuItemBorder             => AppTheme.ButtonBorder;
 	public override Color MenuBorder                 => AppTheme.ButtonBorder;
 	public override Color SeparatorDark              => AppTheme.ButtonBorder;

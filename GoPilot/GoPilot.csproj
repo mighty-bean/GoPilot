@@ -37,6 +37,26 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Microsoft Fluent UI Emoji 3D PNGs, downsampled to 64x64 from the
+         project's original 256x256 assets. Bundled directly inside the
+         compiled binary via LogicalName so OptionIconRenderer can stream
+         them from GetManifestResourceStream("GoPilot.<name>.png").
+         Licensed under the MIT License; see Resources\LICENSE-fluentui-emoji.txt. -->
+    <EmbeddedResource Include="Resources\bone.png">
+      <LogicalName>GoPilot.bone.png</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\warning.png">
+      <LogicalName>GoPilot.warning.png</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\childrencrossing.png">
+      <LogicalName>GoPilot.childrencrossing.png</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\speechballoon.png">
+      <LogicalName>GoPilot.speechballoon.png</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="gopilot-instructions.md">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

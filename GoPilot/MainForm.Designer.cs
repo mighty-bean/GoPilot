@@ -264,7 +264,7 @@ partial class MainForm
         buttonOptions.Name = "buttonOptions";
         buttonOptions.Size = new Size(229, 28);
         buttonOptions.TabIndex = 0;
-        buttonOptions.Text = "⚙ Options ▾";
+        buttonOptions.Text = "Options: ▾";
         toolTipMain.SetToolTip(buttonOptions, "Toggle session options (Auto-approve tools, Fleet mode, Caveman Mode, Show Working Steps)");
         buttonOptions.UseVisualStyleBackColor = false;
         // 
@@ -451,19 +451,17 @@ partial class MainForm
         contextMenuOptions.ForeColor = Color.FromArgb(218, 218, 218);
         contextMenuOptions.Items.AddRange(new ToolStripItem[] { menuOptionAutoApprove, menuOptionFleet, menuSessionCaveman, menuSessionShowSteps });
         contextMenuOptions.Name = "contextMenuOptions";
-        contextMenuOptions.Size = new Size(198, 92);
+        contextMenuOptions.Size = new Size(183, 92);
         // 
         // menuOptionAutoApprove
         // 
         menuOptionAutoApprove.BackColor = Color.FromArgb(56, 56, 56);
-        menuOptionAutoApprove.Checked = true;
         menuOptionAutoApprove.CheckOnClick = true;
-        menuOptionAutoApprove.CheckState = CheckState.Checked;
         menuOptionAutoApprove.ForeColor = Color.FromArgb(218, 218, 218);
         menuOptionAutoApprove.Name = "menuOptionAutoApprove";
-        menuOptionAutoApprove.Size = new Size(197, 22);
+        menuOptionAutoApprove.Size = new Size(182, 22);
         menuOptionAutoApprove.Text = "&Auto-approve tools";
-        menuOptionAutoApprove.ToolTipText = "Automatically approve all tool executions without prompting";
+        menuOptionAutoApprove.ToolTipText = resources.GetString("menuOptionAutoApprove.ToolTipText");
         // 
         // menuOptionFleet
         // 
@@ -471,7 +469,7 @@ partial class MainForm
         menuOptionFleet.CheckOnClick = true;
         menuOptionFleet.ForeColor = Color.FromArgb(218, 218, 218);
         menuOptionFleet.Name = "menuOptionFleet";
-        menuOptionFleet.Size = new Size(197, 22);
+        menuOptionFleet.Size = new Size(182, 22);
         menuOptionFleet.Text = "&Fleet mode";
         menuOptionFleet.ToolTipText = "Activate Fleet mode — Copilot spawns and coordinates multiple sub-agents to work in parallel on complex tasks";
         // 
@@ -481,8 +479,8 @@ partial class MainForm
         menuSessionCaveman.CheckOnClick = true;
         menuSessionCaveman.ForeColor = Color.FromArgb(218, 218, 218);
         menuSessionCaveman.Name = "menuSessionCaveman";
-        menuSessionCaveman.Size = new Size(197, 22);
-        menuSessionCaveman.Text = "\U0001f9b4 Ca&veman Mode";
+        menuSessionCaveman.Size = new Size(182, 22);
+        menuSessionCaveman.Text = "Ca&veman Mode";
         menuSessionCaveman.ToolTipText = "Reduce each prompt to caveman speak before sending. Saves tokens; may lose nuance.";
         // 
         // menuSessionShowSteps
@@ -491,8 +489,8 @@ partial class MainForm
         menuSessionShowSteps.CheckOnClick = true;
         menuSessionShowSteps.ForeColor = Color.FromArgb(218, 218, 218);
         menuSessionShowSteps.Name = "menuSessionShowSteps";
-        menuSessionShowSteps.Size = new Size(197, 22);
-        menuSessionShowSteps.Text = "👁 S&how Working Steps";
+        menuSessionShowSteps.Size = new Size(182, 22);
+        menuSessionShowSteps.Text = "S&how Working Steps";
         menuSessionShowSteps.ToolTipText = "Keep Reasoning and Tool sections expanded after they finish (off = auto-collapse to a one-line summary).";
         // 
         // menuStripMain

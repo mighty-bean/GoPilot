@@ -104,10 +104,11 @@ internal sealed class GoPilotSettings
 
 	/// <summary>
 	/// Last value of the Auto-approve toggle from the Options dropdown.
-	/// Defaults to true to match the designer default for first-run users.
-	/// Persisted under <c>[Session]</c> as <c>AutoApprove=true|false</c>.
+	/// Defaults to false so first-run users explicitly opt in to having
+	/// Copilot run tools without confirmation. Persisted under
+	/// <c>[Session]</c> as <c>AutoApprove=true|false</c>.
 	/// </summary>
-	public bool LastAutoApprove { get; set; } = true;
+	public bool LastAutoApprove { get; set; }
 
 	/// <summary>Loads settings from gopilot.ini; returns defaults if the file does not exist.</summary>
 	public static GoPilotSettings Load()

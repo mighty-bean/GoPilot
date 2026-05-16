@@ -115,6 +115,7 @@ public partial class MainForm : Form
     {
         _startupFolder = startupFolder;
         InitializeComponent();
+        InitializeOptionIcons();
         WireUpEvents();
 
         // Load persisted settings and sync with service
@@ -2152,6 +2153,126 @@ public partial class MainForm : Form
             tip = lines.ToString();
         }
         menuToolsSkillTree.ToolTipText = tip;
+    }
+
+    // ── Options badges (drop-down + on-button strip) ─────────────────────────
+
+    private Bitmap? _badgeCaveman;
+    private Bitmap? _badgeAutoApprove;
+    private Bitmap? _badgeFleet;
+    private Bitmap? _badgeShowSteps;
+
+    /// <summary>
+    /// Builds the badge bitmaps for the four Options menu items (in full
+    /// colour via WPF emoji rendering, with a flat coloured-square
+    /// monochrome fallback), assigns them as Image-margin icons on the
+    /// drop-down, and wires the Options button up for owner-drawn
+    /// painting so the button always shows the badges of whichever
+    /// options are currently enabled.
+    ///
+    /// Must be called after InitializeComponent (which creates the
+    /// controls) but BEFORE the constructor sets the initial Checked
+    /// state of each menu item, so the first paint reflects the
+    /// persisted preferences.
+    /// </summary>
+    private void InitializeOptionIcons()
+    {
+        _badgeAutoApprove = OptionIconRenderer.LoadEmbeddedBadge(
+                                OptionIconRenderer.AutoApproveResource)
+                            ?? OptionIconRenderer.CreateSquareBadge(
+                                OptionIconRenderer.AutoApproveSquare,
+                                OptionIconRenderer.AutoApproveGlyph);
+        _badgeFleet       = OptionIconRenderer.LoadEmbeddedBadge(
+                                OptionIconRenderer.FleetResource)
+                            ?? OptionIconRenderer.CreateSquareBadge(
+                                OptionIconRenderer.FleetSquare,
+                                OptionIconRenderer.FleetGlyph);
+        _badgeCaveman     = OptionIconRenderer.LoadEmbeddedBadge(
+                                OptionIconRenderer.CavemanResource)
+                            ?? OptionIconRenderer.CreateSquareBadge(
+                                OptionIconRenderer.CavemanSquare,
+                                OptionIconRenderer.CavemanGlyph);
+        _badgeShowSteps   = OptionIconRenderer.LoadEmbeddedBadge(
+                                OptionIconRenderer.ShowStepsResource)
+                            ?? OptionIconRenderer.CreateSquareBadge(
+                                OptionIconRenderer.ShowStepsSquare,
+                                OptionIconRenderer.ShowStepsGlyph);
+
+        menuSessionCaveman.Image    = _badgeCaveman;
+        menuOptionAutoApprove.Image = _badgeAutoApprove;
+        menuOptionFleet.Image       = _badgeFleet;
+        menuSessionShowSteps.Image  = _badgeShowSteps;
+
+        // Show the 18x18 badges at their native size in the menu margin
+        // instead of letting WinForms downscale them to the default 16x16.
+        contextMenuOptions.ImageScalingSize = new Size(18, 18);
+
+        // Keep the on-button badge strip in sync with the menu state.
+        menuOptionAutoApprove.CheckedChanged += (_, _) => buttonOptions.Invalidate();
+        menuOptionFleet.CheckedChanged       += (_, _) => buttonOptions.Invalidate();
+        menuSessionCaveman.CheckedChanged    += (_, _) => buttonOptions.Invalidate();
+        menuSessionShowSteps.CheckedChanged  += (_, _) => buttonOptions.Invalidate();
+
+        // Clear the design-time caption so our Paint handler owns the entire
+        // button surface (otherwise the base button paints "⚙ Options ▾" and
+        // our badges overlap the text).
+        buttonOptions.Text = "";
+        buttonOptions.Paint += OnOptionsButtonPaint;
+    }
+
+    /// <summary>
+    /// Owner-draws the Options button: "⚙ Options" on the left, a strip of
+    /// coloured badges for each active option in the middle, and a "▾"
+    /// chevron on the right. The badge order is fixed (Auto-approve, Fleet,
+    /// Caveman, Show Steps) so the visible state reads consistently
+    /// regardless of which order the user toggled them.
+    /// </summary>
+    private void OnOptionsButtonPaint(object? sender, PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode     = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+
+        var btn = buttonOptions;
+        using var font = new Font("Segoe UI", 9f);
+
+        const string label   = "Options";
+        const string chevron = "\u25BE";
+        const int    badgeSz = 18;
+        const int    gap     = 6;
+        const int    badgeGap = 2;
+
+        var active = new List<Bitmap>(4);
+        if (menuOptionAutoApprove.Checked && _badgeAutoApprove != null) active.Add(_badgeAutoApprove);
+        if (menuOptionFleet.Checked       && _badgeFleet       != null) active.Add(_badgeFleet);
+        if (menuSessionCaveman.Checked    && _badgeCaveman     != null) active.Add(_badgeCaveman);
+        if (menuSessionShowSteps.Checked  && _badgeShowSteps   != null) active.Add(_badgeShowSteps);
+
+        var fmt = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix
+                | TextFormatFlags.SingleLine;
+        var labelSize   = TextRenderer.MeasureText(g, label,   font, Size.Empty, fmt);
+        var chevronSize = TextRenderer.MeasureText(g, chevron, font, Size.Empty, fmt);
+
+        int badgesWidth = active.Count == 0
+            ? 0
+            : active.Count * badgeSz + (active.Count - 1) * badgeGap;
+        int totalWidth = labelSize.Width + chevronSize.Width
+                       + (active.Count > 0 ? gap + badgesWidth + gap : gap);
+        int x = (btn.Width  - totalWidth) / 2;
+        int y = (btn.Height - labelSize.Height) / 2;
+
+        TextRenderer.DrawText(g, label, font, new Point(x, y), btn.ForeColor, fmt);
+        x += labelSize.Width + gap;
+
+        int badgeY = (btn.Height - badgeSz) / 2;
+        foreach (var b in active)
+        {
+            g.DrawImage(b, new Rectangle(x, badgeY, badgeSz, badgeSz));
+            x += badgeSz + badgeGap;
+        }
+        if (active.Count > 0) x += gap - badgeGap;
+
+        TextRenderer.DrawText(g, chevron, font, new Point(x, y), btn.ForeColor, fmt);
     }
 
     /// <summary>
