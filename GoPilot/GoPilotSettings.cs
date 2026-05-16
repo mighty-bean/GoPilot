@@ -17,6 +17,13 @@ namespace GoPilot;
 ///   Url=https://github.com/owner/repo
 ///   Url=https://dev.azure.com/org/project/_git/repo
 ///
+///   [Session]
+///   Model=claude-opus-4.6
+///   Mode=Standard
+///   Effort=High
+///   Fleet=false
+///   AutoApprove=true
+///
 /// Legacy format (auto-migrated on first load, then rewritten as [SkillTree]):
 ///   [Org]
 ///   Folder=C:\path\to\org
@@ -61,6 +68,46 @@ internal sealed class GoPilotSettings
 	/// for newly emitted sections only.
 	/// </summary>
 	public bool DetailsDefaultOpen { get; set; }
+
+	/// <summary>
+	/// Last selected model id (e.g. <c>claude-opus-4.6</c>). Empty when no
+	/// preference has been recorded yet; in that case
+	/// <see cref="MainForm.PopulateModelsAsync"/> falls back to its
+	/// Opus-then-Sonnet heuristic. Persisted under <c>[Session]</c> as
+	/// <c>Model=...</c>.
+	/// </summary>
+	public string LastModel { get; set; } = string.Empty;
+
+	/// <summary>
+	/// Last selected mode display name (<c>Standard</c>, <c>Plan</c>, or
+	/// <c>Autopilot</c>). Empty when no preference has been recorded yet; in
+	/// that case the first mode in the combo (Standard) is selected.
+	/// Persisted under <c>[Session]</c> as <c>Mode=...</c>.
+	/// </summary>
+	public string LastMode { get; set; } = string.Empty;
+
+	/// <summary>
+	/// Last selected reasoning-effort level for the active model (e.g.
+	/// <c>High</c>). Empty when no preference has been recorded yet or when
+	/// the active model does not advertise reasoning-effort support; in that
+	/// case the highest-available level is selected. Persisted under
+	/// <c>[Session]</c> as <c>Effort=...</c>.
+	/// </summary>
+	public string LastEffort { get; set; } = string.Empty;
+
+	/// <summary>
+	/// Last value of the Fleet toggle from the Options dropdown. Defaults to
+	/// false to match the designer default for first-run users. Persisted
+	/// under <c>[Session]</c> as <c>Fleet=true|false</c>.
+	/// </summary>
+	public bool LastFleet { get; set; }
+
+	/// <summary>
+	/// Last value of the Auto-approve toggle from the Options dropdown.
+	/// Defaults to true to match the designer default for first-run users.
+	/// Persisted under <c>[Session]</c> as <c>AutoApprove=true|false</c>.
+	/// </summary>
+	public bool LastAutoApprove { get; set; } = true;
 
 	/// <summary>Loads settings from gopilot.ini; returns defaults if the file does not exist.</summary>
 	public static GoPilotSettings Load()
@@ -124,6 +171,17 @@ internal sealed class GoPilotSettings
 				{
 					settings.DetailsDefaultOpen = ParseBool(val);
 				}
+				else if (section == "session")
+				{
+					switch (key)
+					{
+						case "model":       settings.LastModel       = val;             break;
+						case "mode":        settings.LastMode        = val;             break;
+						case "effort":      settings.LastEffort      = val;             break;
+						case "fleet":       settings.LastFleet       = ParseBool(val);  break;
+						case "autoapprove": settings.LastAutoApprove = ParseBool(val);  break;
+					}
+				}
 			}
 		}
 		catch { /* best-effort; return defaults on any read error */ }
@@ -173,6 +231,13 @@ internal sealed class GoPilotSettings
 
 		sb.Append("\r\n[UI]\r\n");
 		sb.Append($"DetailsDefaultOpen={(DetailsDefaultOpen ? "true" : "false")}\r\n");
+
+		sb.Append("\r\n[Session]\r\n");
+		sb.Append($"Model={LastModel}\r\n");
+		sb.Append($"Mode={LastMode}\r\n");
+		sb.Append($"Effort={LastEffort}\r\n");
+		sb.Append($"Fleet={(LastFleet ? "true" : "false")}\r\n");
+		sb.Append($"AutoApprove={(LastAutoApprove ? "true" : "false")}\r\n");
 
 		File.WriteAllText(IniPath, sb.ToString(), Encoding.ASCII);
 	}

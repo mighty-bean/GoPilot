@@ -72,6 +72,15 @@ public partial class MainForm : Form
     // combo to the new model's highest tier). The handler must not push the new
     // effort to the old model via SetModelAsync.
     private bool _suspendEffortHandler = false;
+    // One-shot preferred effort applied during the initial RefreshEffortCombo
+    // call so the persisted LastEffort survives launch. Cleared after first
+    // use so subsequent model switches revert to "highest available" behaviour.
+    private string? _pendingPreferredEffort;
+    // False until PopulateModelsAsync finishes during startup. Suppresses
+    // SaveSessionPreferences during the initial combo population (which fires
+    // SelectedIndexChanged for both model and effort) so we don't thrash
+    // gopilot.ini before the user has actually made a choice.
+    private bool _uiReady = false;
     // Reason a deferred handoff is pending (e.g. mode/fleet change). When non-null,
     // the next DispatchPromptAsync runs an automatic summary-and-restart before
     // forwarding the user's prompt, so context survives the option change.
@@ -114,6 +123,20 @@ public partial class MainForm : Form
         _copilot.CavemanMode      = _settings.CavemanMode;
         menuSessionCaveman.Checked = _settings.CavemanMode;
         menuSessionShowSteps.Checked = _settings.DetailsDefaultOpen;
+        // Restore the last-used Auto-approve / Fleet toggles before the mode
+        // combo is populated so ApplyModeChangeAsync's "Autopilot implies
+        // auto-approve" rule sees the correct starting state. The CheckedChanged
+        // handlers fire but are no-ops at this point: AutoApprove just syncs
+        // _copilot.AutoApprove, and Fleet's ScheduleHandoff guard requires a
+        // live connection. Both are persisted again once _uiReady flips on.
+        menuOptionAutoApprove.Checked = _settings.LastAutoApprove;
+        menuOptionFleet.Checked       = _settings.LastFleet;
+        // Stash the persisted effort for one-shot consumption by the first
+        // RefreshEffortCombo call (triggered from PopulateModelsAsync via the
+        // model combo's SelectedIndexChanged handler).
+        _pendingPreferredEffort = string.IsNullOrWhiteSpace(_settings.LastEffort)
+            ? null
+            : _settings.LastEffort;
         UpdateSkillTreeTooltip();
         UpdateSkillSourcesTooltip();
 
@@ -232,11 +255,15 @@ public partial class MainForm : Form
             contextMenuOptions.Show(buttonOptions, new Point(0, buttonOptions.Height));
 
         menuOptionAutoApprove.CheckedChanged += (_, _) =>
+        {
             _copilot.AutoApprove = menuOptionAutoApprove.Checked;
+            SaveSessionPreferences();
+        };
 
         menuOptionFleet.CheckedChanged += (_, _) =>
         {
             _copilot.FleetMode = menuOptionFleet.Checked;
+            SaveSessionPreferences();
             if (_copilot.IsConnected && _mainSessionId != null)
             {
                 var state = menuOptionFleet.Checked ? "enabled" : "disabled";
@@ -252,6 +279,7 @@ public partial class MainForm : Form
             // correct effort in a single round trip.
             RefreshEffortCombo(model);
             var effort = comboBoxEffort.SelectedItem?.ToString();
+            SaveSessionPreferences();
             try { await _copilot.UpdateModelAsync(model, effort); }
             catch { /* ignore */ }
         };
@@ -261,11 +289,16 @@ public partial class MainForm : Form
             if (_suspendEffortHandler) return;
             if (!comboBoxEffort.Enabled) return;
             var effort = comboBoxEffort.SelectedItem?.ToString();
+            SaveSessionPreferences();
             try { await _copilot.UpdateReasoningEffortAsync(effort); }
             catch { /* ignore */ }
         };
 
-        comboBoxMode.SelectedIndexChanged += async (_, _) => await ApplyModeChangeAsync();
+        comboBoxMode.SelectedIndexChanged += async (_, _) =>
+        {
+            SaveSessionPreferences();
+            await ApplyModeChangeAsync();
+        };
 
         _copilot.ConnectionStateChanged += (_, state) =>
             InvokeOnUI(() => UpdateConnectionStatus(state));
@@ -484,10 +517,37 @@ public partial class MainForm : Form
     }
 
     /// <summary>
+    /// Captures the current Model / Mode / Effort / Fleet / AutoApprove choices
+    /// from the toolbar and Options dropdown into <see cref="_settings"/> and
+    /// persists gopilot.ini. No-op until <see cref="_uiReady"/> flips to true
+    /// at the end of <see cref="PopulateModelsAsync"/>, so the SelectedIndexChanged
+    /// and CheckedChanged events that fire during initial population do not
+    /// thrash the file or overwrite the persisted choice before it is applied.
+    /// All writes are best-effort; failures are swallowed.
+    /// </summary>
+    private void SaveSessionPreferences()
+    {
+        if (!_uiReady) return;
+
+        _settings.LastModel       = comboBoxModel.SelectedItem?.ToString() ?? string.Empty;
+        _settings.LastMode        = comboBoxMode.SelectedItem?.ToString() ?? string.Empty;
+        _settings.LastEffort      = comboBoxEffort.Enabled
+            ? (comboBoxEffort.SelectedItem?.ToString() ?? string.Empty)
+            : string.Empty;
+        _settings.LastFleet       = menuOptionFleet.Checked;
+        _settings.LastAutoApprove = menuOptionAutoApprove.Checked;
+
+        try { _settings.Save(); } catch { /* best-effort persist */ }
+    }
+
+    /// <summary>
     /// Populates comboBoxEffort from the active service's per-model supported
     /// reasoning-effort list. The dropdown is disabled and cleared when the
     /// model does not advertise reasoning-effort support; otherwise the levels
-    /// are listed highest-first and the highest level is pre-selected.
+    /// are listed highest-first and the highest level is pre-selected (unless
+    /// <see cref="_pendingPreferredEffort"/> matches one of the levels, in
+    /// which case that one is selected -- used to restore the last-used effort
+    /// at launch).
     /// </summary>
     private void RefreshEffortCombo(string? modelId)
     {
@@ -501,6 +561,10 @@ public partial class MainForm : Form
             if (efforts.Count == 0)
             {
                 comboBoxEffort.Enabled = false;
+                // Persisted effort doesn't apply to this model; discard the
+                // one-shot so a subsequent model with reasoning support starts
+                // from the highest-available default instead.
+                _pendingPreferredEffort = null;
                 return;
             }
 
@@ -515,7 +579,25 @@ public partial class MainForm : Form
                 comboBoxEffort.Items.Add(e);
 
             comboBoxEffort.Enabled = true;
-            comboBoxEffort.SelectedIndex = 0; // highest available
+
+            var preferredIdx = -1;
+            if (!string.IsNullOrWhiteSpace(_pendingPreferredEffort))
+            {
+                for (var i = 0; i < ranked.Count; i++)
+                {
+                    if (ranked[i].Equals(_pendingPreferredEffort, StringComparison.OrdinalIgnoreCase))
+                    {
+                        preferredIdx = i;
+                        break;
+                    }
+                }
+                // Consume the one-shot regardless of whether it matched, so
+                // later user-driven model switches behave normally (highest
+                // available).
+                _pendingPreferredEffort = null;
+            }
+
+            comboBoxEffort.SelectedIndex = preferredIdx >= 0 ? preferredIdx : 0; // highest available otherwise
         }
         finally
         {
@@ -538,6 +620,8 @@ public partial class MainForm : Form
     /// <summary>
     /// Populates comboBoxMode from the SDK SessionMode enum values,
     /// using display names that match the rest of the app (Interactive -> "Standard").
+    /// Pre-selects the last-used mode from settings when present and valid;
+    /// otherwise selects the first entry (Standard).
     /// </summary>
     private void PopulateModeCombo()
     {
@@ -547,14 +631,26 @@ public partial class MainForm : Form
             var display = _modeDisplayNames.TryGetValue(mode, out var name) ? name : mode.ToString();
             comboBoxMode.Items.Add(display);
         }
-        comboBoxMode.SelectedIndex = 0;
+
+        var preferred = _settings.LastMode;
+        var preferredIdx = string.IsNullOrWhiteSpace(preferred)
+            ? -1
+            : comboBoxMode.Items.Cast<string>()
+                .Select((m, i) => (m, i))
+                .Where(x => x.m.Equals(preferred, StringComparison.OrdinalIgnoreCase))
+                .Select(x => (int?)x.i)
+                .FirstOrDefault() ?? -1;
+
+        comboBoxMode.SelectedIndex = preferredIdx >= 0 ? preferredIdx : 0;
     }
 
     /// <summary>
     /// Queries the Copilot SDK for available models and populates comboBoxModel.
-    /// Selects the highest-available Claude Opus model by default, falling back to
-    /// the highest-available Claude Sonnet model if no Opus model is present.
-    /// Falls back to the service's current ActiveModel if the SDK returns nothing.
+    /// Selects the last-used model from settings when present and still
+    /// advertised by the SDK; otherwise picks the highest-available Claude Opus
+    /// model, falling back to the highest-available Claude Sonnet model if no
+    /// Opus model is present. Falls back to the service's current ActiveModel
+    /// if the SDK returns nothing.
     /// </summary>
     private async Task PopulateModelsAsync()
     {
@@ -570,6 +666,7 @@ public partial class MainForm : Form
                 comboBoxModel.Items.Add(_copilot.ActiveModel);
                 comboBoxModel.SelectedIndex = 0;
             }
+            _uiReady = true;
             return;
         }
 
@@ -589,19 +686,31 @@ public partial class MainForm : Form
             .Select((m, i) => (model: m, idx: i))
             .ToList();
 
+        var preferred = _settings.LastModel;
+        var preferredIdx = string.IsNullOrWhiteSpace(preferred)
+            ? (int?)null
+            : items.Where(x => x.model.Equals(preferred, StringComparison.OrdinalIgnoreCase))
+                .Select(x => (int?)x.idx)
+                .FirstOrDefault();
+
         var opusIdx = items
             .Where(x => x.model.StartsWith("claude-opus", StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(x => x.model)
             .Select(x => (int?)x.idx)
             .FirstOrDefault();
 
-        var defaultIdx = opusIdx ?? items
+        var defaultIdx = preferredIdx ?? opusIdx ?? items
             .Where(x => x.model.StartsWith("claude-sonnet", StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(x => x.model)
             .Select(x => (int?)x.idx)
             .FirstOrDefault() ?? 0;
 
         comboBoxModel.SelectedIndex = defaultIdx;
+        // The model selection above triggered RefreshEffortCombo which consumed
+        // _pendingPreferredEffort. Open the gate so future user-driven changes
+        // are persisted.
+        _uiReady = true;
+        SaveSessionPreferences();
     }
 
 
