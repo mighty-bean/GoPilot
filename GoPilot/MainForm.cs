@@ -722,6 +722,11 @@ public partial class MainForm : Form
 
         if (string.IsNullOrEmpty(prompt) && pastedImages.Count == 0) return;
 
+        // Sending while a turn is in flight always interrupts the current turn
+        // rather than queueing behind it. Without this guard the SDK silently
+        // queues the new prompt at the CLI layer, which the user does not want.
+        await InterruptActiveTurnAsync();
+
         if (recordHistory)
         {
             _promptHistory.Add(prompt);
@@ -744,12 +749,65 @@ public partial class MainForm : Form
 
     private async Task StopAsync()
     {
+        // No-op when nothing is in flight -- clicking Stop on an idle session
+        // should not paint a phantom STOP / Halted pair.
+        if (_pendingCount <= 0) return;
+
+        // Surface the stop command immediately so the user can see their click
+        // was received, then abort, then mark the halt as its consequence.
+        AppendOutput(
+            "\r\nSTOP. Do not perform any further actions. Wait for my next instruction.\r\n",
+            AppTheme.ColorError);
+
+        await InterruptActiveTurnAsync();
+
+        AppendOutput("[STOPPED] Assistant Halted\r\n\r\n", AppTheme.ColorError);
+    }
+
+    // Aborts any turn currently in flight and waits briefly for the SDK's
+    // session.idle to drop _pendingCount back to 0. Returns immediately when
+    // nothing is in flight. The 1500ms cap is a safety net so a missed idle
+    // event can never wedge the UI; in practice the abort settles within a
+    // single message-pump tick on local CLI sessions.
+    private async Task InterruptActiveTurnAsync()
+    {
+        if (_pendingCount <= 0) return;
+
         try { await _copilot.AbortAsync(); }
         catch { /* ignore */ }
 
-        // Allow the session idle event to settle before sending the stop instruction.
-        await Task.Delay(300);
-        await DispatchPromptAsync("STOP. Do not perform any further actions. Wait for my next instruction.");
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (_pendingCount > 0 && sw.ElapsedMilliseconds < 1500)
+        {
+            await Task.Delay(50);
+        }
+
+        // The SDK does not always emit AssistantFinal after an abort, which
+        // would leave the in-flight streaming block alive in _streamingBlocks.
+        // Subsequent AssistantDelta events from the next turn would then find
+        // that stale block and merge the new response into the interrupted
+        // one (visible as a single Assistant section spanning multiple turns
+        // with no header between them). Force-finalize here so the next turn
+        // always starts in a fresh block, and close any open Reasoning/Tool
+        // sections for the same reason.
+        FinalizeAllStreamingBlocks();
+        ClearSectionTrackers();
+    }
+
+    // Closes every in-flight Assistant streaming block across all sessions.
+    // Mirrors FinalizeStreamingBlock(sessionId) but operates on the whole
+    // dictionary -- used by InterruptActiveTurnAsync where we cannot trust
+    // the SDK to emit AssistantFinal after an abort.
+    private void FinalizeAllStreamingBlocks()
+    {
+        if (_streamingBlocks.Count == 0) return;
+
+        foreach (var block in _streamingBlocks.Values)
+        {
+            block.IsComplete = true;
+            WebViewFinalizeBlock(block);
+        }
+        _streamingBlocks.Clear();
     }
 
     private void ShowHelp()
