@@ -48,8 +48,8 @@
     <EmbeddedResource Include="Resources\warning.png">
       <LogicalName>GoPilot.warning.png</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="Resources\childrencrossing.png">
-      <LogicalName>GoPilot.childrencrossing.png</LogicalName>
+    <EmbeddedResource Include="Resources\bustsinsilhouette.png">
+      <LogicalName>GoPilot.bustsinsilhouette.png</LogicalName>
     </EmbeddedResource>
     <EmbeddedResource Include="Resources\speechballoon.png">
       <LogicalName>GoPilot.speechballoon.png</LogicalName>

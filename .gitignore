@@ -41,7 +41,4 @@ bld/
 !.vscode/launch.json
 !.vscode/extensions.json
 
-## github
-.github/
-
 .gopilot/

@@ -25,7 +25,7 @@ internal static class OptionIconRenderer
     // Manifest resource names; must match the <LogicalName> entries in
     // GoPilot.csproj for the embedded Fluent UI Emoji PNGs.
     public const string AutoApproveResource = "GoPilot.warning.png";
-    public const string FleetResource       = "GoPilot.childrencrossing.png";
+    public const string FleetResource       = "GoPilot.bustsinsilhouette.png";
     public const string CavemanResource     = "GoPilot.bone.png";
     public const string ShowStepsResource   = "GoPilot.speechballoon.png";
 
@@ -37,7 +37,7 @@ internal static class OptionIconRenderer
 
     // Monochrome silhouettes used by the colour-square fallback only.
     public const string AutoApproveGlyph = "\u26A0\uFE0F";
-    public const string FleetGlyph       = "\U0001F6B8";
+    public const string FleetGlyph       = "\U0001F465";
     public const string CavemanGlyph     = "\U0001F9B4";
     public const string ShowStepsGlyph   = "\U0001F4AC";
 

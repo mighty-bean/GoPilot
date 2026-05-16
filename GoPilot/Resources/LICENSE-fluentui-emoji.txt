@@ -1,5 +1,5 @@
 The PNG icon files in this directory (bone.png, warning.png,
-childrencrossing.png, speechballoon.png) are derived from the
+bustsinsilhouette.png, speechballoon.png) are derived from the
 Microsoft Fluent UI Emoji project and are used under the MIT License.
 
 Source: https://github.com/microsoft/fluentui-emoji
