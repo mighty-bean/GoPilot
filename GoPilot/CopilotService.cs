@@ -1,4 +1,7 @@
 using GitHub.Copilot.SDK;
+using GitHub.Copilot.SDK.Rpc;
+using SdkPermissionRequestResult = GitHub.Copilot.SDK.PermissionRequestResult;
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -612,6 +615,29 @@ public sealed class CopilotService : IAsyncDisposable
         ConnectionStateChanged?.Invoke(this, "Connecting...");
 
         var cliPath = ResolveCliFromPath();
+
+        // Guard against an outdated system CLI that would be protocol-incompatible with
+        // this SDK build.  The bundled CLI was packaged with the SDK and is guaranteed to
+        // support all required protocol features.  The system CLI's *file* version (not its
+        // self-reported --version string, which reflects the package release version) is
+        // compared: on this machine the WinGet-installed binary may report "1.0.49" via
+        // --version but carry file version 1.0.16, which uses the old v1 permission protocol
+        // and produces "Unhandled permission result kind: [object Object]" errors at runtime.
+        if (cliPath != null)
+        {
+            var bundledVer = GetBundledCliFileVersion();
+            var systemVer  = GetExeFileVersion(cliPath);
+            if (bundledVer != null && systemVer != null && systemVer < bundledVer)
+            {
+                EmitStatus(
+                    $"[GoPilot] System CLI (file version {systemVer.Major}.{systemVer.Minor}.{systemVer.Build}) " +
+                    $"is older than the bundled CLI ({bundledVer.Major}.{bundledVer.Minor}.{bundledVer.Build}). " +
+                    $"Using the bundled CLI to ensure SDK protocol compatibility. " +
+                    $"Run 'copilot update' in a terminal to upgrade your system CLI.");
+                cliPath = null;
+            }
+        }
+
         IsCliFromPath = cliPath != null;
         _cliPath = cliPath;
 
@@ -835,6 +861,16 @@ public sealed class CopilotService : IAsyncDisposable
         _sessions[session.SessionId] = session;
         session.On(evt => HandleSessionEvent(session.SessionId, evt));
 
+        if (AutoApprove || ActiveMode == "Autopilot")
+        {
+            try
+            {
+                var r = await session.Rpc.Permissions.SetApproveAllAsync(true);
+                if (!r.Success) EmitStatus("[Permission] SetApproveAllAsync returned Success=false.");
+            }
+            catch (Exception ex) { EmitStatus($"[Permission] SetApproveAllAsync failed: {ex.Message}"); }
+        }
+
         if (FleetMode)
         {
             try
@@ -1008,6 +1044,15 @@ public sealed class CopilotService : IAsyncDisposable
                 _mainSession = session;
                 _sessions[session.SessionId] = session;
                 session.On(evt => HandleSessionEvent(session.SessionId, evt));
+                if (AutoApprove || ActiveMode == "Autopilot")
+                {
+                    try
+                    {
+                        var r = await session.Rpc.Permissions.SetApproveAllAsync(true);
+                        if (!r.Success) EmitStatus("[Permission] SetApproveAllAsync returned Success=false.");
+                    }
+                    catch (Exception ex) { EmitStatus($"[Permission] SetApproveAllAsync failed: {ex.Message}"); }
+                }
                 EmitPendingStatus(session.SessionId);
                 return;
             }
@@ -1039,6 +1084,16 @@ public sealed class CopilotService : IAsyncDisposable
         _mainSession = session;
         _sessions[session.SessionId] = session;
         session.On(evt => HandleSessionEvent(session.SessionId, evt));
+
+        if (AutoApprove || ActiveMode == "Autopilot")
+        {
+            try
+            {
+                var r = await session.Rpc.Permissions.SetApproveAllAsync(true);
+                if (!r.Success) EmitStatus("[Permission] SetApproveAllAsync returned Success=false.");
+            }
+            catch (Exception ex) { EmitStatus($"[Permission] SetApproveAllAsync failed: {ex.Message}"); }
+        }
 
         if (FleetMode)
         {
@@ -1287,6 +1342,31 @@ public sealed class CopilotService : IAsyncDisposable
             if (File.Exists(candidate))
                 return candidate;
         }
+        return null;
+    }
+
+    /// <summary>
+    /// Returns the Windows file version of the SDK's bundled <c>copilot.exe</c>, or
+    /// <c>null</c> if the bundled binary cannot be located.
+    /// </summary>
+    private static Version? GetBundledCliFileVersion()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "runtimes", "win-x64", "native", "copilot.exe");
+        return File.Exists(path) ? GetExeFileVersion(path) : null;
+    }
+
+    /// <summary>
+    /// Returns the Windows file version of <paramref name="path"/>, following symlinks.
+    /// Returns <c>null</c> on any failure.
+    /// </summary>
+    private static Version? GetExeFileVersion(string path)
+    {
+        try
+        {
+            var info = FileVersionInfo.GetVersionInfo(path);
+            if (Version.TryParse(info.FileVersion, out var v)) return v;
+        }
+        catch { }
         return null;
     }
 
@@ -1942,6 +2022,15 @@ public sealed class CopilotService : IAsyncDisposable
                     _cachedSdkCommands = cmds.Data.Commands;
                 break;
 
+            case PermissionRequestedEvent:
+                // PermissionRequestedEvent is an informational event only.  Responding to
+                // it via HandlePendingPermissionRequestAsync while OnPermissionRequest is
+                // also set causes double-responses for the same request, which confuses the
+                // CLI and produces "Unhandled permission result kind: [object Object]".
+                // The OnPermissionRequest callback (required by the SDK) is the sole
+                // response path; do not call HandlePendingPermissionRequestAsync here.
+                break;
+
             case AssistantUsageEvent usage:
                 // Update the context-window meter from the main user-driven flow only:
                 // ignore sub-agents (ParentToolCallId set) and non-user initiators
@@ -2044,45 +2133,49 @@ public sealed class CopilotService : IAsyncDisposable
     private PermissionRequestHandler BuildPermissionHandler()    {
         return async (request, invocation) =>
         {
-            // Dynamic auto-approve: respects the checkbox state at the time of each request
-            if (AutoApprove || ActiveMode == "Autopilot")
-                return new PermissionRequestResult { Kind = PermissionRequestResultKind.Approved };
-
-            // Kind previously approved for this session via "Approve Similar"
-            if (_approvedKinds.Contains(request.Kind ?? ""))
-                return new PermissionRequestResult { Kind = PermissionRequestResultKind.Approved };
-
-            string? toolName = request is PermissionRequestMcp mcp ? mcp.ToolName : null;
-            string? fileName = request switch
+            try
             {
-                PermissionRequestWrite w => w.FileName,
-                PermissionRequestRead r => r.Path,
-                PermissionRequestUrl u => u.Url,
-                _ => null,
-            };
-            string? commandText = request is PermissionRequestShell shell ? shell.FullCommandText : null;
+                // Dynamic auto-approve: delegate to the SDK's own ApproveAll handler so we
+                // never touch PermissionRequestResult serialization for the hot path.
+                if (AutoApprove || ActiveMode == "Autopilot")
+                    return await PermissionHandler.ApproveAll(request, invocation);
 
-            var args = new PermissionEventArgs
+                // Kind previously approved for this session via "Approve Similar"
+                if (_approvedKinds.Contains(request.Kind ?? ""))
+                    return await PermissionHandler.ApproveAll(request, invocation);
+
+                string? toolName = request is PermissionRequestMcp mcp ? mcp.ToolName : null;
+                string? fileName = request switch
+                {
+                    PermissionRequestWrite w => w.FileName,
+                    PermissionRequestRead r => r.Path,
+                    PermissionRequestUrl u => u.Url,
+                    _ => null,
+                };
+                string? commandText = request is PermissionRequestShell shell ? shell.FullCommandText : null;
+
+                var args = new PermissionEventArgs
+                {
+                    OperationKind = request.Kind ?? "",
+                    ToolName = toolName,
+                    FileName = fileName,
+                    CommandText = commandText,
+                };
+
+                PermissionRequested?.Invoke(this, args);
+
+                bool approved = await args.Decision.Task;
+
+                if (approved && args.ApproveSimilar && !string.IsNullOrEmpty(args.OperationKind))
+                    _approvedKinds.Add(args.OperationKind);
+
+                return await (approved ? PermissionHandler.ApproveAll : (_ , _) => Task.FromResult(new SdkPermissionRequestResult { Kind = PermissionRequestResultKind.Rejected }))(request, invocation);
+            }
+            catch (Exception ex)
             {
-                OperationKind = request.Kind ?? "",
-                ToolName = toolName,
-                FileName = fileName,
-                CommandText = commandText,
-            };
-
-            PermissionRequested?.Invoke(this, args);
-
-            bool approved = await args.Decision.Task;
-
-            if (approved && args.ApproveSimilar && !string.IsNullOrEmpty(args.OperationKind))
-                _approvedKinds.Add(args.OperationKind);
-
-            return new PermissionRequestResult
-            {
-                Kind = approved
-                    ? PermissionRequestResultKind.Approved
-                    : PermissionRequestResultKind.Rejected,
-            };
+                EmitStatus($"[Permission] Handler error ({request?.Kind ?? "?"}): {ex.Message}");
+                return new SdkPermissionRequestResult { Kind = PermissionRequestResultKind.Rejected };
+            }
         };
     }
 

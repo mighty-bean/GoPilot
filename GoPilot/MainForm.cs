@@ -609,7 +609,8 @@ public partial class MainForm : Form
 
     // ── Combo population ──────────────────────────────────────────────────────
 
-    // Maps each SDK mode enum value to the display name used throughout the app.
+    // Maps each SDK mode value to the display name used throughout the app.
+    // SessionMode is a readonly struct in SDK 1.0+, not an enum.
     private static readonly Dictionary<SessionMode, string> _modeDisplayNames =
         new()
         {
@@ -618,8 +619,17 @@ public partial class MainForm : Form
             [SessionMode.Autopilot]   = "Autopilot",
         };
 
+    // Ordered list of all known SessionMode values (replaces Enum.GetValues since
+    // SessionMode is no longer a plain enum as of SDK 1.0.0-beta.1).
+    private static readonly SessionMode[] _allModes =
+    [
+        SessionMode.Interactive,
+        SessionMode.Plan,
+        SessionMode.Autopilot,
+    ];
+
     /// <summary>
-    /// Populates comboBoxMode from the SDK SessionMode enum values,
+    /// Populates comboBoxMode from the known SessionMode values,
     /// using display names that match the rest of the app (Interactive -> "Standard").
     /// Pre-selects the last-used mode from settings when present and valid;
     /// otherwise selects the first entry (Standard).
@@ -627,7 +637,7 @@ public partial class MainForm : Form
     private void PopulateModeCombo()
     {
         comboBoxMode.Items.Clear();
-        foreach (var mode in Enum.GetValues<SessionMode>())
+        foreach (var mode in _allModes)
         {
             var display = _modeDisplayNames.TryGetValue(mode, out var name) ? name : mode.ToString();
             comboBoxMode.Items.Add(display);
@@ -1702,6 +1712,8 @@ public partial class MainForm : Form
 
         ResetSessionTrackingState();
 
+        if (!EnsureFolderTrusted(folderPath)) return;
+
         _copilot.WorkingDirectory = folderPath;
         menuSessionNew.Enabled = false;
         toolStripStatusLabelSession.Text = folderPath;
@@ -2027,6 +2039,9 @@ public partial class MainForm : Form
             }
 
             ResetSessionTrackingState();
+
+            if (!EnsureFolderTrusted(workspace)) return;
+
             _copilot.WorkingDirectory = workspace;
             menuSessionNew.Enabled = false;
             toolStripStatusLabelSession.Text = workspace;
@@ -4286,6 +4301,34 @@ public partial class MainForm : Form
             buttonSend.Enabled = false;
             buttonStop.Enabled = false;
         }
+    }
+
+    // ── Folder trust ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns true if <paramref name="folderPath"/> is already recorded as a
+    /// trusted location in the CLI's permissions-config.json.  If not, prompts
+    /// the user; on approval the path is written to that shared file so both
+    /// GoPilot and the Copilot CLI recognise it as trusted going forward.
+    /// Returns false (without connecting) if the user declines.
+    /// </summary>
+    private static bool EnsureFolderTrusted(string folderPath)
+    {
+        if (CopilotPermissionsConfig.IsTrusted(folderPath)) return true;
+
+        var result = MessageBox.Show(
+            $"Do you want to allow Copilot to access this folder?\r\n\r\n" +
+            $"{folderPath}\r\n\r\n" +
+            "Copilot can read files, write files, and run shell commands here.",
+            "Trust this folder?",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question,
+            MessageBoxDefaultButton.Button2);
+
+        if (result != DialogResult.Yes) return false;
+
+        CopilotPermissionsConfig.Trust(folderPath);
+        return true;
     }
 
     // ── Permission / input dialogs ────────────────────────────────────────────
