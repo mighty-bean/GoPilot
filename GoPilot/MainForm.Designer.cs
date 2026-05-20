@@ -81,6 +81,8 @@ partial class MainForm
         menuToolsSkillTree = new ToolStripMenuItem();
         menuToolsSkillSources = new ToolStripMenuItem();
         menuToolsBrowseCatalog = new ToolStripMenuItem();
+        menuToolsSeparator2 = new ToolStripSeparator();
+        menuToolsPermissions = new ToolStripMenuItem();
         menuHelp = new ToolStripMenuItem();
         menuHelpShow = new ToolStripMenuItem();
         menuHelpAbout = new ToolStripMenuItem();
@@ -654,7 +656,7 @@ partial class MainForm
         // 
         // menuTools
         // 
-        menuTools.DropDownItems.AddRange(new ToolStripItem[] { menuToolsPowershell, menuToolsExplorer, menuToolsVSCode, menuToolsSeparator1, menuToolsSkillTree, menuToolsSkillSources, menuToolsBrowseCatalog });
+        menuTools.DropDownItems.AddRange(new ToolStripItem[] { menuToolsPowershell, menuToolsExplorer, menuToolsVSCode, menuToolsSeparator1, menuToolsSkillTree, menuToolsSkillSources, menuToolsBrowseCatalog, menuToolsSeparator2, menuToolsPermissions });
         menuTools.ForeColor = Color.FromArgb(218, 218, 218);
         menuTools.Name = "menuTools";
         menuTools.Size = new Size(47, 20);
@@ -720,6 +722,22 @@ partial class MainForm
         menuToolsBrowseCatalog.Size = new Size(204, 22);
         menuToolsBrowseCatalog.Text = "📥 Browse Skill &Catalog...";
         menuToolsBrowseCatalog.ToolTipText = "Browse and download skills, agents, prompts, and instructions from the configured Skill Sources";
+        // 
+        // menuToolsSeparator2
+        // 
+        menuToolsSeparator2.BackColor = Color.FromArgb(56, 56, 56);
+        menuToolsSeparator2.ForeColor = Color.FromArgb(218, 218, 218);
+        menuToolsSeparator2.Name = "menuToolsSeparator2";
+        menuToolsSeparator2.Size = new Size(201, 6);
+        // 
+        // menuToolsPermissions
+        // 
+        menuToolsPermissions.BackColor = Color.FromArgb(56, 56, 56);
+        menuToolsPermissions.ForeColor = Color.FromArgb(218, 218, 218);
+        menuToolsPermissions.Name = "menuToolsPermissions";
+        menuToolsPermissions.Size = new Size(204, 22);
+        menuToolsPermissions.Text = "🔐 Workspace &Permissions...";
+        menuToolsPermissions.ToolTipText = "View and edit trusted folders and pre-approved tool operations stored in ~/.copilot/permissions-config.json";
         // 
         // menuHelp
         // 
@@ -862,6 +880,8 @@ partial class MainForm
     private System.Windows.Forms.ToolStripMenuItem menuToolsSkillTree;
     private System.Windows.Forms.ToolStripMenuItem menuToolsSkillSources;
     private System.Windows.Forms.ToolStripMenuItem menuToolsBrowseCatalog;
+    private System.Windows.Forms.ToolStripSeparator menuToolsSeparator2;
+    private System.Windows.Forms.ToolStripMenuItem menuToolsPermissions;
     private System.Windows.Forms.ToolStripMenuItem menuSession;
     private System.Windows.Forms.ToolStripMenuItem menuSessionNew;
     private System.Windows.Forms.ToolStripSeparator menuSessionSeparatorNew;

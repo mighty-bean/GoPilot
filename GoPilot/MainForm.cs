@@ -248,6 +248,7 @@ public partial class MainForm : Form
         menuToolsSkillTree.Click += (_, _) => EditSkillTree();
         menuToolsSkillSources.Click += (_, _) => EditSkillSources();
         menuToolsBrowseCatalog.Click += (_, _) => BrowseSkillCatalog();
+        menuToolsPermissions.Click += (_, _) => ShowWorkspacePermissions();
         menuReferencesListAgents.Click += (_, _) => ShowAgentList();
         menuReferencesListSkills.Click += (_, _) => ShowSkillList();
         menuReferencesListPrompts.Click += (_, _) => ShowPromptList();
@@ -2364,6 +2365,12 @@ public partial class MainForm : Form
 
         if (resp == DialogResult.Yes && _copilot.IsConnected && _mainSessionId != null)
             ScheduleHandoff("Skill Catalog content downloaded");
+    }
+
+    private void ShowWorkspacePermissions()
+    {
+        using var dialog = new WorkspaceTrustDialog(_copilot.WorkingDirectory);
+        dialog.ShowDialog(this);
     }
 
     private void UpdateSkillSourcesTooltip()
