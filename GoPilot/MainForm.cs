@@ -4372,9 +4372,15 @@ public partial class MainForm : Form
         var version = await _copilot.GetVersionAsync();
         if (string.IsNullOrEmpty(version)) return;
 
+        var source = _copilot.IsCliFromPath ? "system" : "bundled";
+
         if (_cliUpdateChecked || !_copilot.IsCliFromPath)
         {
-            AppendOutput($"[Copilot CLI v{version}]\r\n", AppTheme.ColorMeta);
+            AppendOutput($"[Copilot CLI v{version} ({source})]\r\n", AppTheme.ColorMeta);
+            if (!_copilot.IsCliFromPath)
+                AppendOutput(
+                    "[To use your system CLI instead, install it via: winget install GitHub.CopilotCLI — then restart GoPilot]\r\n",
+                    AppTheme.ColorMeta);
             return;
         }
 
@@ -4384,19 +4390,19 @@ public partial class MainForm : Form
 
         if (latest == null)
         {
-            AppendOutput($"[Copilot CLI v{version} — update check unavailable]\r\n", AppTheme.ColorMeta);
+            AppendOutput($"[Copilot CLI v{version} ({source}) — update check unavailable]\r\n", AppTheme.ColorMeta);
             return;
         }
 
         if (UpdateChecker.IsNewer(version, latest))
         {
             AppendOutput(
-                $"[Copilot CLI update available: v{version} -> v{latest} — open a Copilot terminal and run /update]\r\n",
+                $"[Copilot CLI update available: v{version} -> v{latest} ({source}) — open a Copilot terminal and run /update]\r\n",
                 AppTheme.ColorTool);
         }
         else
         {
-            AppendOutput($"[Copilot CLI v{version} — up to date]\r\n", AppTheme.ColorMeta);
+            AppendOutput($"[Copilot CLI v{version} ({source}) — up to date]\r\n", AppTheme.ColorMeta);
         }
     }
 

@@ -98,6 +98,7 @@ public sealed class CopilotService : IAsyncDisposable
     private readonly Queue<string> _pendingStatusMessages = new();
 
     private CancellationTokenSource? _keepAliveCts;
+    private string? _cliPath;
     private const int KeepAliveIntervalSeconds = 30;
 
     public event EventHandler<SessionEventArgs>? SessionCreated;
@@ -230,10 +231,62 @@ public sealed class CopilotService : IAsyncDisposable
         if (_client == null) return "";
         try
         {
+            // The version reported by GetStatusAsync() is the internal server/protocol
+            // version (e.g. 1.0.16), which is on a different scale to the release
+            // version surfaced by "copilot --version" (e.g. 1.0.49) and the GitHub
+            // Releases API.  When we have the system CLI path, run the binary directly
+            // to get the user-facing release version so that the update check compares
+            // like with like.
+            if (_cliPath != null)
+            {
+                var binaryVersion = await GetCliBinaryVersionAsync(_cliPath);
+                if (!string.IsNullOrEmpty(binaryVersion))
+                    return binaryVersion;
+            }
+
             var status = await _client.GetStatusAsync();
             return status.Version ?? "";
         }
         catch { return ""; }
+    }
+
+    /// <summary>
+    /// Runs <c>{path} --version</c> and parses the version number from the output.
+    /// Expected output: "GitHub Copilot CLI 1.0.49." (trailing period is stripped).
+    /// Returns null on any failure.
+    /// </summary>
+    private static async Task<string?> GetCliBinaryVersionAsync(string path)
+    {
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var psi = new System.Diagnostics.ProcessStartInfo(path, "--version")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError  = true,
+                UseShellExecute        = false,
+                CreateNoWindow         = true,
+            };
+            using var proc = System.Diagnostics.Process.Start(psi)!;
+            var output = await proc.StandardOutput.ReadToEndAsync(cts.Token);
+            await proc.WaitForExitAsync(cts.Token);
+
+            // "GitHub Copilot CLI 1.0.49.\nRun 'copilot update'..."
+            foreach (var line in output.Split('\n'))
+            {
+                var trimmed = line.Trim().TrimEnd('.');
+                // Find the last whitespace-delimited token that looks like a version
+                var parts = trimmed.Split(' ');
+                var last = parts[^1];
+                if (last.Length > 0 && char.IsDigit(last[0]))
+                    return last;
+            }
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -560,6 +613,7 @@ public sealed class CopilotService : IAsyncDisposable
 
         var cliPath = ResolveCliFromPath();
         IsCliFromPath = cliPath != null;
+        _cliPath = cliPath;
 
         _client = new CopilotClient(new CopilotClientOptions
         {
