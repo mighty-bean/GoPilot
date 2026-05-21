@@ -154,6 +154,17 @@ public partial class MainForm : Form
         // Apply the dark renderer to ALL ToolStrips (MenuStrip, DropDowns,
         // StatusStrip) via the global manager so dropdowns inherit it too.
         ToolStripManager.Renderer = new DarkMenuRenderer();
+
+        // Auto-scaling doubles the status strip's margins and padding at 200% DPI,
+        // making it unnecessarily tall. Collapse them in Load (after PerformAutoScale
+        // has run) so the strip auto-sizes to the text height with minimal padding.
+        Load += (_, _) =>
+        {
+            statusStrip.SizingGrip = false;
+            statusStrip.Padding    = Padding.Empty;
+            foreach (ToolStripItem item in statusStrip.Items)
+                item.Margin = new Padding(item.Margin.Left, 1, item.Margin.Right, 1);
+        };
     }
 
     // ── Event wiring ─────────────────────────────────────────────────────────
