@@ -54,6 +54,9 @@ internal sealed class SessionListDialog : Form
 		_currentSessionId = currentSessionId;
 		_deleteAsync      = deleteAsync;
 
+		AutoScaleDimensions = new SizeF(7F, 15F);
+		AutoScaleMode       = AutoScaleMode.Font;
+
 		Text            = "Past Sessions";
 		StartPosition   = FormStartPosition.CenterParent;
 		FormBorderStyle = FormBorderStyle.Sizable;

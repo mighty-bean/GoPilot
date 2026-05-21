@@ -67,6 +67,9 @@ internal sealed class SkillCatalogBrowserDialog : Form
 
 	private void BuildUi()
 	{
+		AutoScaleDimensions = new SizeF(7F, 15F);
+		AutoScaleMode       = AutoScaleMode.Font;
+
 		Text            = "Skill Catalog";
 		FormBorderStyle = FormBorderStyle.Sizable;
 		StartPosition   = FormStartPosition.CenterParent;

@@ -21,6 +21,9 @@ public sealed class ReadmePromptDialog : Form
 
     public ReadmePromptDialog(string fileName)
     {
+        AutoScaleDimensions = new SizeF(7F, 15F);
+        AutoScaleMode       = AutoScaleMode.Font;
+
         Text = "Read README?";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         StartPosition = FormStartPosition.CenterParent;

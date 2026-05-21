@@ -46,6 +46,9 @@ internal sealed class WorkspaceTrustDialog : Form
 		_activeFolder = activeFolder;
 		_data         = CopilotPermissionsConfig.LoadAll();
 
+		AutoScaleDimensions = new SizeF(7F, 15F);
+		AutoScaleMode       = AutoScaleMode.Font;
+
 		Text            = "Workspace Permissions";
 		StartPosition   = FormStartPosition.CenterParent;
 		FormBorderStyle = FormBorderStyle.Sizable;
@@ -273,8 +276,8 @@ internal sealed class WorkspaceTrustDialog : Form
 			// Setting Panel1/2MinSize or SplitterDistance during construction
 			// triggers validation against the control's default 150px width
 			// and throws InvalidOperationException.
-			split.Panel1MinSize    = 200;
-			split.Panel2MinSize    = 240;
+			split.Panel1MinSize    = LogicalToDeviceUnits(200);
+			split.Panel2MinSize    = LogicalToDeviceUnits(240);
 			split.SplitterDistance = Math.Max(
 				split.Panel1MinSize,
 				Math.Min(ClientSize.Width - split.Panel2MinSize - split.SplitterWidth,

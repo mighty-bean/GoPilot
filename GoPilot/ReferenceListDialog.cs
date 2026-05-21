@@ -32,6 +32,9 @@ internal sealed class ReferenceListDialog : Form
 
 	private ReferenceListDialog(string title, IReadOnlyList<(string[] Cells, string Name, string Path, bool PathIsFile, string Tooltip)> rows, string[] columnHeaders, int[] columnWidths)
 	{
+		AutoScaleDimensions = new SizeF(7F, 15F);
+		AutoScaleMode       = AutoScaleMode.Font;
+
 		Text            = title;
 		StartPosition   = FormStartPosition.CenterParent;
 		FormBorderStyle = FormBorderStyle.Sizable;

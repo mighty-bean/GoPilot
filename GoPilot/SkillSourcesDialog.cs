@@ -45,6 +45,9 @@ public sealed class SkillSourcesDialog : Form
 
 	private void BuildUi()
 	{
+		AutoScaleDimensions = new SizeF(7F, 15F);
+		AutoScaleMode       = AutoScaleMode.Font;
+
 		Text            = "Skill Sources";
 		FormBorderStyle = FormBorderStyle.Sizable;
 		StartPosition   = FormStartPosition.CenterParent;

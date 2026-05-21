@@ -14,6 +14,9 @@ internal sealed class AboutDialog : Form
 {
 	public AboutDialog()
 	{
+		AutoScaleDimensions = new SizeF(7F, 15F);
+		AutoScaleMode       = AutoScaleMode.Font;
+
 		Text            = "About GoPilot";
 		FormBorderStyle = FormBorderStyle.FixedDialog;
 		StartPosition   = FormStartPosition.CenterParent;

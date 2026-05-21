@@ -42,6 +42,9 @@ public sealed class SkillTreeDialog : Form
 
     private void BuildUi()
     {
+        AutoScaleDimensions = new SizeF(7F, 15F);
+        AutoScaleMode       = AutoScaleMode.Font;
+
         Text            = "Skill Tree";
         FormBorderStyle = FormBorderStyle.Sizable;
         StartPosition   = FormStartPosition.CenterParent;
