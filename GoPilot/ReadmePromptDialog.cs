@@ -21,6 +21,7 @@ public sealed class ReadmePromptDialog : Form
 
     public ReadmePromptDialog(string fileName)
     {
+        SuspendLayout();
         AutoScaleDimensions = new SizeF(7F, 15F);
         AutoScaleMode       = AutoScaleMode.Font;
 
@@ -75,5 +76,7 @@ public sealed class ReadmePromptDialog : Form
 
         AcceptButton = buttonYes;
         CancelButton = buttonNo;
+        ResumeLayout(false);
+        PerformLayout();
     }
 }

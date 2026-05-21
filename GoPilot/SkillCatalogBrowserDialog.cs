@@ -67,6 +67,7 @@ internal sealed class SkillCatalogBrowserDialog : Form
 
 	private void BuildUi()
 	{
+		SuspendLayout();
 		AutoScaleDimensions = new SizeF(7F, 15F);
 		AutoScaleMode       = AutoScaleMode.Font;
 
@@ -214,6 +215,8 @@ internal sealed class SkillCatalogBrowserDialog : Form
 
 		AcceptButton = _downloadBtn;
 		CancelButton = _closeBtn;
+		ResumeLayout(false);
+		PerformLayout();
 	}
 
 	/// <summary>
@@ -226,7 +229,7 @@ internal sealed class SkillCatalogBrowserDialog : Form
 	{
 		base.OnLoad(e);
 
-		const int minPanel = 200;
+		int minPanel = LogicalToDeviceUnits(200);
 		var available = _split.Width - _split.SplitterWidth;
 		if (available < minPanel * 2 + 20)
 		{

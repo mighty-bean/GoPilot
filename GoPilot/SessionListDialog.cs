@@ -54,6 +54,7 @@ internal sealed class SessionListDialog : Form
 		_currentSessionId = currentSessionId;
 		_deleteAsync      = deleteAsync;
 
+		SuspendLayout();
 		AutoScaleDimensions = new SizeF(7F, 15F);
 		AutoScaleMode       = AutoScaleMode.Font;
 
@@ -218,6 +219,8 @@ internal sealed class SessionListDialog : Form
 		};
 
 		UpdateButtonState();
+		ResumeLayout(false);
+		PerformLayout();
 	}
 
 	private ListViewItem BuildItem(SessionRow row)

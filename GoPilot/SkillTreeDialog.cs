@@ -42,6 +42,7 @@ public sealed class SkillTreeDialog : Form
 
     private void BuildUi()
     {
+        SuspendLayout();
         AutoScaleDimensions = new SizeF(7F, 15F);
         AutoScaleMode       = AutoScaleMode.Font;
 
@@ -141,6 +142,8 @@ public sealed class SkillTreeDialog : Form
         _buttonDown.Click   += (_, _) => OnMove(+1);
         _buttonOk.Click     += (_, _) => OnOk();
         _buttonCancel.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };
+        ResumeLayout(false);
+        PerformLayout();
     }
 
     private static void StyleButton(Button b, string text, int top)

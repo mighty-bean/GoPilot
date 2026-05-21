@@ -14,6 +14,7 @@ internal sealed class AboutDialog : Form
 {
 	public AboutDialog()
 	{
+		SuspendLayout();
 		AutoScaleDimensions = new SizeF(7F, 15F);
 		AutoScaleMode       = AutoScaleMode.Font;
 
@@ -101,5 +102,7 @@ internal sealed class AboutDialog : Form
 
 		AcceptButton = buttonOk;
 		CancelButton = buttonOk;
+		ResumeLayout(false);
+		PerformLayout();
 	}
 }

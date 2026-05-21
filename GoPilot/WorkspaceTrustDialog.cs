@@ -43,6 +43,7 @@ internal sealed class WorkspaceTrustDialog : Form
 
 	public WorkspaceTrustDialog(string? activeFolder)
 	{
+		SuspendLayout();
 		_activeFolder = activeFolder;
 		_data         = CopilotPermissionsConfig.LoadAll();
 
@@ -294,6 +295,8 @@ internal sealed class WorkspaceTrustDialog : Form
 			_folderList.Items[0].Selected = true;
 
 		UpdateButtonState();
+		ResumeLayout(false);
+		PerformLayout();
 	}
 
 	// ── List item builder ─────────────────────────────────────────────────────

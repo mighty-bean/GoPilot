@@ -32,6 +32,7 @@ internal sealed class ReferenceListDialog : Form
 
 	private ReferenceListDialog(string title, IReadOnlyList<(string[] Cells, string Name, string Path, bool PathIsFile, string Tooltip)> rows, string[] columnHeaders, int[] columnWidths)
 	{
+		SuspendLayout();
 		AutoScaleDimensions = new SizeF(7F, 15F);
 		AutoScaleMode       = AutoScaleMode.Font;
 
@@ -223,6 +224,8 @@ internal sealed class ReferenceListDialog : Form
 			_list.Items[0].Focused  = true;
 			_list.Select();
 		}
+		ResumeLayout(false);
+		PerformLayout();
 	}
 
 	private void Accept()
