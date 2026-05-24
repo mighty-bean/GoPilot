@@ -2,7 +2,8 @@ namespace GoPilot;
 
 using System.Runtime.InteropServices;
 using System.Text.Json;
-using GitHub.Copilot.SDK.Rpc;
+using GitHub.Copilot;
+using GitHub.Copilot.Rpc;
 
 public partial class MainForm : Form
 {

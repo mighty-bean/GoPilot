@@ -35,7 +35,7 @@ internal static class UpdateChecker
 	/// <summary>Returns the informational version of the loaded GitHub.Copilot.SDK assembly.</summary>
 	public static string GetCurrentSdkVersion()
 	{
-		var asm = typeof(GitHub.Copilot.SDK.CopilotClient).Assembly;
+		var asm = typeof(GitHub.Copilot.CopilotClient).Assembly;
 		var infoVer = asm
 			.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
 			?.InformationalVersion;

@@ -1,6 +1,5 @@
-using GitHub.Copilot.SDK;
-using GitHub.Copilot.SDK.Rpc;
-using SdkPermissionRequestResult = GitHub.Copilot.SDK.PermissionRequestResult;
+using GitHub.Copilot;
+using GitHub.Copilot.Rpc;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
@@ -88,6 +87,7 @@ public sealed class CopilotService : IAsyncDisposable
 {
     private CopilotClient? _client;
     private CopilotSession? _mainSession;
+    private bool _isConnected;
     private IDisposable? _lifecycleSubscription;
     private IDisposable? _lifecycleDeletedSubscription;
     private readonly Dictionary<string, CopilotSession> _sessions = new();
@@ -204,7 +204,7 @@ public sealed class CopilotService : IAsyncDisposable
     /// Mirrored from GoPilot's Session menu and persisted in gopilot.ini.
     /// </summary>
     public bool CavemanMode { get; set; } = false;
-    public bool IsConnected => _client?.State == ConnectionState.Connected;
+    public bool IsConnected => _client != null && _isConnected;
 
     // ── Reference cache (populated by LoadTier* during session creation) ────
     private List<AgentInfo>  _cachedAgents  = new();
@@ -617,7 +617,7 @@ public sealed class CopilotService : IAsyncDisposable
         var cliPath = ResolveCliFromPath();
 
         // Guard against an outdated system CLI that would be protocol-incompatible with
-        // this SDK build.  The bundled CLI was packaged with the SDK and is guaranteed to
+        // this SDK build. The bundled CLI was packaged with the SDK and is guaranteed to
         // support all required protocol features.  The system CLI's *file* version (not its
         // self-reported --version string, which reflects the package release version) is
         // compared: on this machine the WinGet-installed binary may report "1.0.49" via
@@ -643,12 +643,14 @@ public sealed class CopilotService : IAsyncDisposable
 
         _client = new CopilotClient(new CopilotClientOptions
         {
-            CliPath = cliPath,
-            Cwd = WorkingDirectory,
+            Connection = cliPath != null
+                ? RuntimeConnection.ForStdio(cliPath, new List<string>())
+                : null,
+            WorkingDirectory = WorkingDirectory,
             Environment = BuildCliEnvironment(),
         });
 
-        _lifecycleSubscription = _client.On(SessionLifecycleEventTypes.Created, evt =>
+        _lifecycleSubscription = _client.OnLifecycle<SessionCreatedEvent>(evt =>
         {
             if (evt.SessionId != _mainSession?.SessionId)
             {
@@ -660,7 +662,7 @@ public sealed class CopilotService : IAsyncDisposable
             }
         });
 
-        _lifecycleDeletedSubscription = _client.On(SessionLifecycleEventTypes.Deleted, evt =>
+        _lifecycleDeletedSubscription = _client.OnLifecycle<SessionDeletedEvent>(evt =>
         {
             // The main session being deleted is handled elsewhere (reconnect/reset paths).
             if (evt.SessionId == _mainSession?.SessionId) return;
@@ -669,6 +671,7 @@ public sealed class CopilotService : IAsyncDisposable
         });
 
         await _client.StartAsync();
+        _isConnected = true;
         ConnectionStateChanged?.Invoke(this, "Connected");
     }
 
@@ -736,6 +739,7 @@ public sealed class CopilotService : IAsyncDisposable
         {
             try { await _client.DisposeAsync(); } catch { }
             _client = null;
+            _isConnected = false;
         }
 
         if (cancellationToken.IsCancellationRequested) return;
@@ -859,7 +863,7 @@ public sealed class CopilotService : IAsyncDisposable
 
         _mainSession = session;
         _sessions[session.SessionId] = session;
-        session.On(evt => HandleSessionEvent(session.SessionId, evt));
+        session.On<SessionEvent>(evt => HandleSessionEvent(session.SessionId, evt));
 
         if (AutoApprove || ActiveMode == "Autopilot")
         {
@@ -909,7 +913,7 @@ public sealed class CopilotService : IAsyncDisposable
         if (_mainSession == null) return [];
         try
         {
-            var messages = await _mainSession.GetMessagesAsync();
+            var messages = await _mainSession.GetEventsAsync();
             var result = new List<(string, string)>();
             foreach (var evt in messages)
             {
@@ -1043,7 +1047,7 @@ public sealed class CopilotService : IAsyncDisposable
 
                 _mainSession = session;
                 _sessions[session.SessionId] = session;
-                session.On(evt => HandleSessionEvent(session.SessionId, evt));
+                session.On<SessionEvent>(evt => HandleSessionEvent(session.SessionId, evt));
                 if (AutoApprove || ActiveMode == "Autopilot")
                 {
                     try
@@ -1083,7 +1087,7 @@ public sealed class CopilotService : IAsyncDisposable
 
         _mainSession = session;
         _sessions[session.SessionId] = session;
-        session.On(evt => HandleSessionEvent(session.SessionId, evt));
+        session.On<SessionEvent>(evt => HandleSessionEvent(session.SessionId, evt));
 
         if (AutoApprove || ActiveMode == "Autopilot")
         {
@@ -1186,7 +1190,7 @@ public sealed class CopilotService : IAsyncDisposable
             "(e.g., Set-Content, Add-Content, Get-Content, Get-ChildItem, Select-String). " +
             "Do not retry the same built-in tool that failed.");
 
-        // Tiered instructions: Personal -> SkillTree[*] -> Project
+        // Tiered instructions: Personal -> Skill Tree[*] -> Project
         var loadedTiers = new List<string>();
         foreach (var (label, folder) in GetTierFolders())
         {
@@ -1856,6 +1860,7 @@ public sealed class CopilotService : IAsyncDisposable
         _pendingToolNames.Clear();
         _approvedKinds.Clear();
         _client = null;
+        _isConnected = false;
         ConnectionStateChanged?.Invoke(this, "Not connected");
     }
 
@@ -1955,7 +1960,7 @@ public sealed class CopilotService : IAsyncDisposable
                     SubAgentModel       = sa.Data.Model,
                     SubAgentTotalCalls  = sa.Data.TotalToolCalls,
                     SubAgentTotalTokens = sa.Data.TotalTokens,
-                    SubAgentDurationMs  = sa.Data.DurationMs,
+                    SubAgentDurationMs  = sa.Data.Duration?.TotalMilliseconds,
                 });
                 break;
 
@@ -1970,7 +1975,7 @@ public sealed class CopilotService : IAsyncDisposable
                     SubAgentModel       = sa.Data.Model,
                     SubAgentTotalCalls  = sa.Data.TotalToolCalls,
                     SubAgentTotalTokens = sa.Data.TotalTokens,
-                    SubAgentDurationMs  = sa.Data.DurationMs,
+                    SubAgentDurationMs  = sa.Data.Duration?.TotalMilliseconds,
                 });
                 break;
 
@@ -2130,13 +2135,14 @@ public sealed class CopilotService : IAsyncDisposable
     private static string Truncate(string s, int max) =>
         s.Length <= max ? s : s[..max] + "…";
 
-    private PermissionRequestHandler BuildPermissionHandler()    {
+    private Func<PermissionRequest, PermissionInvocation, Task<PermissionDecision>> BuildPermissionHandler()
+    {
         return async (request, invocation) =>
         {
             try
             {
                 // Dynamic auto-approve: delegate to the SDK's own ApproveAll handler so we
-                // never touch PermissionRequestResult serialization for the hot path.
+                // never touch PermissionDecision serialization for the hot path.
                 if (AutoApprove || ActiveMode == "Autopilot")
                     return await PermissionHandler.ApproveAll(request, invocation);
 
@@ -2169,17 +2175,20 @@ public sealed class CopilotService : IAsyncDisposable
                 if (approved && args.ApproveSimilar && !string.IsNullOrEmpty(args.OperationKind))
                     _approvedKinds.Add(args.OperationKind);
 
-                return await (approved ? PermissionHandler.ApproveAll : (_ , _) => Task.FromResult(new SdkPermissionRequestResult { Kind = PermissionRequestResultKind.Rejected }))(request, invocation);
+                if (approved)
+                    return await PermissionHandler.ApproveAll(request, invocation);
+
+                return PermissionDecision.Reject(null);
             }
             catch (Exception ex)
             {
                 EmitStatus($"[Permission] Handler error ({request?.Kind ?? "?"}): {ex.Message}");
-                return new SdkPermissionRequestResult { Kind = PermissionRequestResultKind.Rejected };
+                return PermissionDecision.Reject(null);
             }
         };
     }
 
-    private UserInputHandler BuildUserInputHandler()
+    private Func<UserInputRequest, UserInputInvocation, Task<UserInputResponse>> BuildUserInputHandler()
     {
         return async (request, invocation) =>
         {
@@ -2211,6 +2220,7 @@ public sealed class CopilotService : IAsyncDisposable
             await session.DisposeAsync();
         _sessions.Clear();
         _mainSession = null;
+        _isConnected = false;
 
         if (_client != null)
         {
