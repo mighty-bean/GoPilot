@@ -2280,13 +2280,19 @@ public partial class MainForm : Form
     private Bitmap? _badgeFleet;
     private Bitmap? _badgeShowSteps;
 
+    // Cached ImageAttributes used to render an Options badge in the
+    // "off" (greyed-out) state. Built once in InitializeOptionIcons and
+    // reused on every paint; reuse is safe because ImageAttributes is
+    // stateless across DrawImage calls.
+    private System.Drawing.Imaging.ImageAttributes? _disabledBadgeAttr;
+
     /// <summary>
     /// Builds the badge bitmaps for the four Options menu items (in full
     /// colour via WPF emoji rendering, with a flat coloured-square
     /// monochrome fallback), assigns them as Image-margin icons on the
     /// drop-down, and wires the Options button up for owner-drawn
-    /// painting so the button always shows the badges of whichever
-    /// options are currently enabled.
+    /// painting so the button always shows the full set of option
+    /// badges -- in colour when enabled, greyed-out when disabled.
     ///
     /// Must be called after InitializeComponent (which creates the
     /// controls) but BEFORE the constructor sets the initial Checked
@@ -2325,6 +2331,23 @@ public partial class MainForm : Form
         // instead of letting WinForms downscale them to the default 16x16.
         contextMenuOptions.ImageScalingSize = new Size(18, 18);
 
+        // Build the greyscale + reduced-alpha colour matrix used by the
+        // paint handler to render "off" badges. The luminance weights
+        // (0.30/0.59/0.11) are the standard ITU-R BT.601 coefficients;
+        // the alpha row multiplies source alpha by 0.40 so disabled
+        // badges visibly recede while still hinting at what the option
+        // would look like when active.
+        var greyMatrix = new System.Drawing.Imaging.ColorMatrix(new[]
+        {
+            new float[] { 0.30f, 0.30f, 0.30f, 0f,    0f },
+            new float[] { 0.59f, 0.59f, 0.59f, 0f,    0f },
+            new float[] { 0.11f, 0.11f, 0.11f, 0f,    0f },
+            new float[] { 0f,    0f,    0f,    0.40f, 0f },
+            new float[] { 0f,    0f,    0f,    0f,    1f },
+        });
+        _disabledBadgeAttr = new System.Drawing.Imaging.ImageAttributes();
+        _disabledBadgeAttr.SetColorMatrix(greyMatrix);
+
         // Keep the on-button badge strip in sync with the menu state.
         menuOptionAutoApprove.CheckedChanged += (_, _) => buttonOptions.Invalidate();
         menuOptionFleet.CheckedChanged       += (_, _) => buttonOptions.Invalidate();
@@ -2339,11 +2362,12 @@ public partial class MainForm : Form
     }
 
     /// <summary>
-    /// Owner-draws the Options button: "⚙ Options" on the left, a strip of
-    /// coloured badges for each active option in the middle, and a "▾"
-    /// chevron on the right. The badge order is fixed (Auto-approve, Fleet,
-    /// Caveman, Show Steps) so the visible state reads consistently
-    /// regardless of which order the user toggled them.
+    /// Owner-draws the Options button: "Options" on the left, a strip of
+    /// badges for every option in the middle (enabled options in full
+    /// colour, disabled options greyed-out via _disabledBadgeAttr), and
+    /// a chevron on the right. The badge order is fixed (Auto-approve,
+    /// Fleet, Caveman, Show Steps) so the user can read each option's
+    /// state by position regardless of which order they toggled them.
     /// </summary>
     private void OnOptionsButtonPaint(object? sender, PaintEventArgs e)
     {
@@ -2360,22 +2384,25 @@ public partial class MainForm : Form
         const int    gap     = 6;
         const int    badgeGap = 2;
 
-        var active = new List<Bitmap>(4);
-        if (menuOptionAutoApprove.Checked && _badgeAutoApprove != null) active.Add(_badgeAutoApprove);
-        if (menuOptionFleet.Checked       && _badgeFleet       != null) active.Add(_badgeFleet);
-        if (menuSessionCaveman.Checked    && _badgeCaveman     != null) active.Add(_badgeCaveman);
-        if (menuSessionShowSteps.Checked  && _badgeShowSteps   != null) active.Add(_badgeShowSteps);
+        // Fixed order, with the current Checked state of each menu item.
+        // Any badge bitmap that failed to load is skipped so we never
+        // leave a hole in the strip.
+        var badges = new List<(Bitmap Bmp, bool On)>(4);
+        if (_badgeAutoApprove != null) badges.Add((_badgeAutoApprove, menuOptionAutoApprove.Checked));
+        if (_badgeFleet       != null) badges.Add((_badgeFleet,       menuOptionFleet.Checked));
+        if (_badgeCaveman     != null) badges.Add((_badgeCaveman,     menuSessionCaveman.Checked));
+        if (_badgeShowSteps   != null) badges.Add((_badgeShowSteps,   menuSessionShowSteps.Checked));
 
         var fmt = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix
                 | TextFormatFlags.SingleLine;
         var labelSize   = TextRenderer.MeasureText(g, label,   font, Size.Empty, fmt);
         var chevronSize = TextRenderer.MeasureText(g, chevron, font, Size.Empty, fmt);
 
-        int badgesWidth = active.Count == 0
+        int badgesWidth = badges.Count == 0
             ? 0
-            : active.Count * badgeSz + (active.Count - 1) * badgeGap;
+            : badges.Count * badgeSz + (badges.Count - 1) * badgeGap;
         int totalWidth = labelSize.Width + chevronSize.Width
-                       + (active.Count > 0 ? gap + badgesWidth + gap : gap);
+                       + (badges.Count > 0 ? gap + badgesWidth + gap : gap);
         int x = (btn.Width  - totalWidth) / 2;
         int y = (btn.Height - labelSize.Height) / 2;
 
@@ -2383,12 +2410,25 @@ public partial class MainForm : Form
         x += labelSize.Width + gap;
 
         int badgeY = (btn.Height - badgeSz) / 2;
-        foreach (var b in active)
+        foreach (var (bmp, on) in badges)
         {
-            g.DrawImage(b, new Rectangle(x, badgeY, badgeSz, badgeSz));
+            var dest = new Rectangle(x, badgeY, badgeSz, badgeSz);
+            if (on || _disabledBadgeAttr == null)
+            {
+                g.DrawImage(bmp, dest);
+            }
+            else
+            {
+                g.DrawImage(
+                    bmp,
+                    dest,
+                    0, 0, bmp.Width, bmp.Height,
+                    GraphicsUnit.Pixel,
+                    _disabledBadgeAttr);
+            }
             x += badgeSz + badgeGap;
         }
-        if (active.Count > 0) x += gap - badgeGap;
+        if (badges.Count > 0) x += gap - badgeGap;
 
         TextRenderer.DrawText(g, chevron, font, new Point(x, y), btn.ForeColor, fmt);
     }
