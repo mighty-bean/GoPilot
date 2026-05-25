@@ -207,6 +207,25 @@ internal static class CopilotPermissionsConfig
 		SaveAll(data);
 	}
 
+	/// <summary>
+	/// Returns the set of pre-approved tool-kind strings (e.g. "shell",
+	/// "write") currently recorded in permissions-config.json for the given
+	/// folder, or an empty set when the folder is absent.  Order is the
+	/// display order from <see cref="KnownKinds"/>.
+	/// </summary>
+	public static IReadOnlyList<string> GetApprovedKinds(string? folder)
+	{
+		if (string.IsNullOrEmpty(folder)) return Array.Empty<string>();
+		var key   = Normalize(folder);
+		var entry = LoadAll().Locations.FirstOrDefault(e =>
+			Normalize(e.FolderPath).Equals(key, StringComparison.OrdinalIgnoreCase));
+		if (entry == null) return Array.Empty<string>();
+		return KnownKinds
+			.Where(k => entry.ApprovedKinds.Contains(k.Kind))
+			.Select(k => k.Kind)
+			.ToList();
+	}
+
 	// ── Shared utility ────────────────────────────────────────────────────────
 
 	/// <summary>

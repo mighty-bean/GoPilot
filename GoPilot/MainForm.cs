@@ -272,6 +272,8 @@ public partial class MainForm : Form
         {
             _copilot.AutoApprove = menuOptionAutoApprove.Checked;
             SaveSessionPreferences();
+            if (_copilot.IsConnected)
+                EmitPermissionsStatus("Auto-approve toggled");
         };
 
         menuOptionFleet.CheckedChanged += (_, _) =>
@@ -1194,6 +1196,7 @@ public partial class MainForm : Form
 
     private async Task ApplyModeChangeAsync()
     {
+        var prevMode = _copilot.ActiveMode;
         var mode = comboBoxMode.SelectedItem?.ToString() ?? "Standard";
         _copilot.ActiveMode = mode;
 
@@ -1201,13 +1204,76 @@ public partial class MainForm : Form
         if (mode == "Autopilot" && !menuOptionAutoApprove.Checked)
             menuOptionAutoApprove.Checked = true;
 
+        ApplyAutoApproveAvailability(mode);
+
         // Mode is baked into the session's system message at creation time.
         // Defer the session reset to the next send so we can summarise the
         // current conversation and seed it into the new session automatically.
         if (_copilot.IsConnected && _mainSessionId != null)
+        {
             ScheduleHandoff($"Mode changed to {mode}");
 
+            // Crossing the Autopilot boundary flips whether Auto-approve is
+            // forced, so the effective permissions picture has changed even
+            // if the AutoApprove toggle itself did not (already-checked case
+            // does not re-fire CheckedChanged).
+            bool prevAutopilot = string.Equals(prevMode, "Autopilot",
+                StringComparison.Ordinal);
+            bool nextAutopilot = string.Equals(mode, "Autopilot",
+                StringComparison.Ordinal);
+            if (prevAutopilot != nextAutopilot)
+                EmitPermissionsStatus($"Mode -> {mode}");
+        }
+
         await Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Gates the Auto-approve menu item based on the active mode.  Autopilot
+    /// mode forces auto-approve at both the system-message layer and the SDK
+    /// runtime layer (see <see cref="CopilotService.EffectiveApproveAll"/>),
+    /// so the user-facing toggle has no effect there.  Disabling it -- and
+    /// annotating its label -- prevents the silent UX trap where the user
+    /// believes they have turned auto-approve off while it remains active.
+    /// </summary>
+    private void ApplyAutoApproveAvailability(string mode)
+    {
+        bool forced = string.Equals(mode, "Autopilot", StringComparison.Ordinal);
+        menuOptionAutoApprove.Enabled = !forced;
+        menuOptionAutoApprove.Text = forced
+            ? "&Auto-approve tools (forced by Autopilot)"
+            : "&Auto-approve tools";
+    }
+
+    /// <summary>
+    /// Writes a single-line status banner to the output window summarising the
+    /// effective permission gating for the connected workspace.  Called at
+    /// session start and whenever any input affecting the picture changes
+    /// (Auto-approve toggle, Mode change crossing the Autopilot boundary, or
+    /// the Workspace Permissions dialog editing the active folder).  Silent
+    /// when no workspace is connected.  Format:
+    /// <c>[Permissions: Auto-approve ON | Workspace pre-approvals: shell, read]</c>
+    /// </summary>
+    private void EmitPermissionsStatus(string? reason = null)
+    {
+        var folder = _copilot.WorkingDirectory;
+        if (string.IsNullOrEmpty(folder)) return;
+
+        bool autoForced = string.Equals(_copilot.ActiveMode, "Autopilot",
+            StringComparison.Ordinal);
+        string autoState = autoForced
+            ? "FORCED by Autopilot"
+            : (_copilot.AutoApprove ? "ON" : "OFF");
+
+        var kinds = CopilotPermissionsConfig.GetApprovedKinds(folder);
+        string preApprovals = kinds.Count == 0
+            ? "(none)"
+            : string.Join(", ", kinds);
+
+        string suffix = string.IsNullOrEmpty(reason) ? "" : $" -- {reason}";
+        AppendOutput(
+            $"[Permissions: Auto-approve {autoState} | Workspace pre-approvals: {preApprovals}{suffix}]\r\n",
+            AppTheme.ColorMeta);
     }
 
     /// <summary>
@@ -1746,6 +1812,8 @@ public partial class MainForm : Form
 
             if (_copilot.ScratchpadPath != null)
                 AppendOutput($"[Scratchpad: {_copilot.ScratchpadPath}]\r\n", AppTheme.ColorMeta);
+
+            EmitPermissionsStatus();
 
             // Report which instruction tiers were loaded
             foreach (var (label, folder) in _copilot.GetTierFolders())
@@ -2381,8 +2449,25 @@ public partial class MainForm : Form
 
     private void ShowWorkspacePermissions()
     {
-        using var dialog = new WorkspaceTrustDialog(_copilot.WorkingDirectory);
-        dialog.ShowDialog(this);
+        using var dialog = new WorkspaceTrustDialog(
+            _copilot.WorkingDirectory,
+            preselectFolder: _copilot.WorkingDirectory);
+        var result = dialog.ShowDialog(this);
+
+        // Permissions-config.json is consulted by the CLI only at session
+        // start.  When the user's saved changes touched the currently-active
+        // workspace, schedule the same summary-and-restart handoff used by
+        // Mode/Fleet/SkillTree changes so the new permission state actually
+        // takes effect, and announce the new state in the output window so
+        // the user can see what changed without re-opening the dialog.
+        if (result == DialogResult.OK
+            && dialog.AffectedActiveFolder
+            && _copilot.IsConnected
+            && _mainSessionId != null)
+        {
+            EmitPermissionsStatus("Workspace permissions edited");
+            ScheduleHandoff("Workspace permissions changed");
+        }
     }
 
     private void UpdateSkillSourcesTooltip()

@@ -20,9 +20,26 @@ internal sealed class WorkspaceTrustDialog : Form
 	// ── State ─────────────────────────────────────────────────────────────────
 
 	private readonly string? _activeFolder;   // currently-connected CWD (may be null)
+	private readonly string? _preselectFolder; // folder to select on Load (may be null)
 	private PermissionsData   _data;
 	private bool              _dirty;
 	private bool              _suppressChecks; // prevents check events during programmatic population
+
+	// Snapshot of the active folder's permission state at dialog open time, used
+	// to detect whether the user's saved changes touched the currently-connected
+	// workspace (in which case the caller should restart the session for them to
+	// take effect).  Null when there is no active folder.
+	private readonly bool                _initialActiveTrusted;
+	private readonly HashSet<string>?    _initialActiveKinds;
+
+	/// <summary>
+	/// True after Save when the user's changes affected the currently-connected
+	/// workspace folder (revoked entirely, newly added, or kinds added/removed).
+	/// The caller should schedule a summary-and-restart handoff so the CLI picks
+	/// up the new permission state -- the CLI reads permissions-config.json only
+	/// at session startup.
+	/// </summary>
+	public bool AffectedActiveFolder { get; private set; }
 
 	// ── Controls ──────────────────────────────────────────────────────────────
 
@@ -42,10 +59,38 @@ internal sealed class WorkspaceTrustDialog : Form
 	// ── Constructor ───────────────────────────────────────────────────────────
 
 	public WorkspaceTrustDialog(string? activeFolder)
+		: this(activeFolder, preselectFolder: activeFolder)
+	{
+	}
+
+	/// <summary>
+	/// Constructs the dialog and, if <paramref name="preselectFolder"/> resolves
+	/// to one of the persisted location entries, selects it and scrolls it into
+	/// view.  Falls back to selecting the first entry when not matched.  Used by
+	/// the Options menu's "pre-approvals" shortcut to land the user directly on
+	/// the currently-connected workspace.
+	/// </summary>
+	public WorkspaceTrustDialog(string? activeFolder, string? preselectFolder)
 	{
 		SuspendLayout();
-		_activeFolder = activeFolder;
-		_data         = CopilotPermissionsConfig.LoadAll();
+		_activeFolder     = activeFolder;
+		_preselectFolder  = preselectFolder;
+		_data             = CopilotPermissionsConfig.LoadAll();
+
+		// Capture the active folder's initial state so SaveBtn_Click can decide
+		// whether the workspace was actually touched.
+		if (!string.IsNullOrEmpty(_activeFolder))
+		{
+			var key     = CopilotPermissionsConfig.Normalize(_activeFolder);
+			var initial = _data.Locations.FirstOrDefault(e =>
+				CopilotPermissionsConfig.Normalize(e.FolderPath)
+					.Equals(key, StringComparison.OrdinalIgnoreCase));
+			_initialActiveTrusted = initial != null;
+			_initialActiveKinds   = initial != null
+				? new HashSet<string>(initial.ApprovedKinds,
+					StringComparer.OrdinalIgnoreCase)
+				: null;
+		}
 
 		AutoScaleDimensions = new SizeF(7F, 15F);
 		AutoScaleMode       = AutoScaleMode.Font;
@@ -225,7 +270,7 @@ internal sealed class WorkspaceTrustDialog : Form
 			ForeColor = AppTheme.TextMuted,
 			BackColor = AppTheme.Background,
 			Padding   = new Padding(4, 0, 0, 0),
-			Text      = "Changes apply to new sessions only.",
+			Text      = "Changes affecting the current workspace restart the session.",
 		};
 
 		_saveBtn = new Button
@@ -290,9 +335,29 @@ internal sealed class WorkspaceTrustDialog : Form
 			if (e.KeyCode == Keys.Escape) _cancelBtn.PerformClick();
 		};
 
-		// Initial state
-		if (_folderList.Items.Count > 0)
-			_folderList.Items[0].Selected = true;
+		// Initial state: prefer the explicit preselectFolder match; fall back
+		// to the first entry so the right pane is never blank when entries exist.
+		ListViewItem? toSelect = null;
+		if (!string.IsNullOrEmpty(_preselectFolder))
+		{
+			var key = CopilotPermissionsConfig.Normalize(_preselectFolder);
+			foreach (ListViewItem lvi in _folderList.Items)
+			{
+				if (lvi.Tag is LocationEntry entry
+					&& CopilotPermissionsConfig.Normalize(entry.FolderPath)
+						.Equals(key, StringComparison.OrdinalIgnoreCase))
+				{
+					toSelect = lvi;
+					break;
+				}
+			}
+		}
+		toSelect ??= _folderList.Items.Count > 0 ? _folderList.Items[0] : null;
+		if (toSelect != null)
+		{
+			toSelect.Selected = true;
+			toSelect.EnsureVisible();
+		}
 
 		UpdateButtonState();
 		ResumeLayout(false);
@@ -421,10 +486,34 @@ internal sealed class WorkspaceTrustDialog : Form
 
 	private void SaveBtn_Click(object? sender, EventArgs e)
 	{
+		AffectedActiveFolder = ActiveFolderStateChanged();
 		CopilotPermissionsConfig.SaveAll(_data);
 		_dirty        = false;
 		DialogResult  = DialogResult.OK;
 		Close();
+	}
+
+	/// <summary>
+	/// True when the currently-connected workspace folder's trust or
+	/// per-kind approvals differ from the snapshot captured when the dialog
+	/// opened.  Returns false when there is no active workspace.
+	/// </summary>
+	private bool ActiveFolderStateChanged()
+	{
+		if (string.IsNullOrEmpty(_activeFolder)) return false;
+
+		var key     = CopilotPermissionsConfig.Normalize(_activeFolder);
+		var current = _data.Locations.FirstOrDefault(e =>
+			CopilotPermissionsConfig.Normalize(e.FolderPath)
+				.Equals(key, StringComparison.OrdinalIgnoreCase));
+		var nowTrusted = current != null;
+
+		if (nowTrusted != _initialActiveTrusted) return true;
+		if (!nowTrusted) return false; // wasn't trusted, still isn't
+
+		var before = _initialActiveKinds ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		var after  = current!.ApprovedKinds;
+		return !before.SetEquals(after);
 	}
 
 	private void CancelBtn_Click(object? sender, EventArgs e)

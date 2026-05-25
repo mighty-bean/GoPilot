@@ -140,7 +140,20 @@ public sealed class CopilotService : IAsyncDisposable
     public double CurrentMaxPromptTokens => _currentMaxPromptTokens;
 
     public string ActiveModel { get; set; } = "claude-sonnet-4.6";
-    public string ActiveMode  { get; set; } = "Standard";
+    private string _activeMode = "Standard";
+    public string ActiveMode
+    {
+        get => _activeMode;
+        set
+        {
+            if (string.Equals(_activeMode, value, StringComparison.Ordinal)) return;
+            var prevEffective = EffectiveApproveAll(_activeMode, _autoApprove);
+            _activeMode = value;
+            var nextEffective = EffectiveApproveAll(value, _autoApprove);
+            if (prevEffective != nextEffective)
+                _ = PropagateApproveAllAsync(nextEffective);
+        }
+    }
 
     /// <summary>
     /// Reasoning-effort level applied to the active model when the model
@@ -196,7 +209,27 @@ public sealed class CopilotService : IAsyncDisposable
     /// gopilot-instructions.md tiers (set from gopilot.ini).
     /// </summary>
     public IList<string> SkillTreeFolders { get; set; } = new List<string>();
-    public bool AutoApprove { get; set; } = false;
+    private bool _autoApprove = false;
+    /// <summary>
+    /// When toggled mid-session, the new state is pushed to the CLI via
+    /// <c>SetApproveAllAsync</c> so the runtime stops (or starts) bypassing
+    /// the permission handler.  Switching from true to false also resets the
+    /// session's accumulated per-kind approvals so subsequent operations
+    /// prompt the user again.
+    /// </summary>
+    public bool AutoApprove
+    {
+        get => _autoApprove;
+        set
+        {
+            if (_autoApprove == value) return;
+            var prevEffective = EffectiveApproveAll(_activeMode, _autoApprove);
+            _autoApprove = value;
+            var nextEffective = EffectiveApproveAll(_activeMode, value);
+            if (prevEffective != nextEffective)
+                _ = PropagateApproveAllAsync(nextEffective);
+        }
+    }
     public bool FleetMode   { get; set; } = false;
     /// <summary>
     /// When true, every new session's system message includes a directive
@@ -865,15 +898,14 @@ public sealed class CopilotService : IAsyncDisposable
         _sessions[session.SessionId] = session;
         session.On<SessionEvent>(evt => HandleSessionEvent(session.SessionId, evt));
 
-        if (AutoApprove || ActiveMode == "Autopilot")
+        try
         {
-            try
-            {
-                var r = await session.Rpc.Permissions.SetApproveAllAsync(true);
-                if (!r.Success) EmitStatus("[Permission] SetApproveAllAsync returned Success=false.");
-            }
-            catch (Exception ex) { EmitStatus($"[Permission] SetApproveAllAsync failed: {ex.Message}"); }
+            var effective = EffectiveApproveAll(ActiveMode, AutoApprove);
+            var r = await session.Rpc.Permissions.SetApproveAllAsync(
+                effective, PermissionsSetApproveAllSource.Rpc, default);
+            if (!r.Success) EmitStatus($"[Permission] SetApproveAllAsync({effective}) returned Success=false.");
         }
+        catch (Exception ex) { EmitStatus($"[Permission] SetApproveAllAsync failed: {ex.Message}"); }
 
         if (FleetMode)
         {
@@ -1048,15 +1080,14 @@ public sealed class CopilotService : IAsyncDisposable
                 _mainSession = session;
                 _sessions[session.SessionId] = session;
                 session.On<SessionEvent>(evt => HandleSessionEvent(session.SessionId, evt));
-                if (AutoApprove || ActiveMode == "Autopilot")
+                try
                 {
-                    try
-                    {
-                        var r = await session.Rpc.Permissions.SetApproveAllAsync(true);
-                        if (!r.Success) EmitStatus("[Permission] SetApproveAllAsync returned Success=false.");
-                    }
-                    catch (Exception ex) { EmitStatus($"[Permission] SetApproveAllAsync failed: {ex.Message}"); }
+                    var effective = EffectiveApproveAll(ActiveMode, AutoApprove);
+                    var r = await session.Rpc.Permissions.SetApproveAllAsync(
+                        effective, PermissionsSetApproveAllSource.Rpc, default);
+                    if (!r.Success) EmitStatus($"[Permission] SetApproveAllAsync({effective}) returned Success=false.");
                 }
+                catch (Exception ex) { EmitStatus($"[Permission] SetApproveAllAsync failed: {ex.Message}"); }
                 EmitPendingStatus(session.SessionId);
                 return;
             }
@@ -1089,15 +1120,14 @@ public sealed class CopilotService : IAsyncDisposable
         _sessions[session.SessionId] = session;
         session.On<SessionEvent>(evt => HandleSessionEvent(session.SessionId, evt));
 
-        if (AutoApprove || ActiveMode == "Autopilot")
+        try
         {
-            try
-            {
-                var r = await session.Rpc.Permissions.SetApproveAllAsync(true);
-                if (!r.Success) EmitStatus("[Permission] SetApproveAllAsync returned Success=false.");
-            }
-            catch (Exception ex) { EmitStatus($"[Permission] SetApproveAllAsync failed: {ex.Message}"); }
+            var effective = EffectiveApproveAll(ActiveMode, AutoApprove);
+            var r = await session.Rpc.Permissions.SetApproveAllAsync(
+                effective, PermissionsSetApproveAllSource.Rpc, default);
+            if (!r.Success) EmitStatus($"[Permission] SetApproveAllAsync({effective}) returned Success=false.");
         }
+        catch (Exception ex) { EmitStatus($"[Permission] SetApproveAllAsync failed: {ex.Message}"); }
 
         if (FleetMode)
         {
@@ -2134,6 +2164,51 @@ public sealed class CopilotService : IAsyncDisposable
 
     private static string Truncate(string s, int max) =>
         s.Length <= max ? s : s[..max] + "…";
+
+    /// <summary>
+    /// Effective runtime "approve-all" state: the CLI bypasses the permission
+    /// handler entirely when this is true.  Driven by either the explicit
+    /// AutoApprove toggle or by Autopilot mode (which implies it).
+    /// </summary>
+    private static bool EffectiveApproveAll(string mode, bool autoApprove) =>
+        autoApprove || string.Equals(mode, "Autopilot", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Fire-and-forget RPC that pushes the effective approve-all state to the
+    /// CLI for the active main session.  When transitioning to false, also
+    /// resets the session's accumulated per-kind approvals (so previously
+    /// "Approve Similar"-ed kinds prompt again) and clears the local mirror.
+    /// No-op when there is no active session.
+    /// </summary>
+    private async Task PropagateApproveAllAsync(bool enabled)
+    {
+        var session = _mainSession;
+        if (session == null) return;
+        try
+        {
+            await session.Rpc.Permissions.SetApproveAllAsync(
+                enabled,
+                PermissionsSetApproveAllSource.Rpc,
+                default);
+
+            if (!enabled)
+            {
+                try
+                {
+                    await session.Rpc.Permissions.ResetSessionApprovalsAsync(default);
+                }
+                catch (Exception ex)
+                {
+                    EmitStatus($"[Permission] ResetSessionApprovalsAsync failed: {ex.Message}");
+                }
+                _approvedKinds.Clear();
+            }
+        }
+        catch (Exception ex)
+        {
+            EmitStatus($"[Permission] Mid-session SetApproveAllAsync({enabled}) failed: {ex.Message}");
+        }
+    }
 
     private Func<PermissionRequest, PermissionInvocation, Task<PermissionDecision>> BuildPermissionHandler()
     {
