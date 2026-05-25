@@ -376,6 +376,13 @@ public partial class MainForm : Form
             // dropped on the floor.
             webViewOutput.CoreWebView2.WebMessageReceived += WebView_WebMessageReceived;
 
+            // Intercept top-level navigations (clicked anchors, document.location
+            // assignments) and popup window requests (target="_blank", window.open).
+            // Any web URL is routed to the system default browser so the
+            // Rendered tab never replaces the transcript with a remote page.
+            webViewOutput.CoreWebView2.NavigationStarting  += WebView_NavigationStarting;
+            webViewOutput.CoreWebView2.NewWindowRequested += WebView_NewWindowRequested;
+
             // Navigate to the bundled output.html
             var htmlPath = Path.Combine(AppContext.BaseDirectory, "web", "output.html");
             if (File.Exists(htmlPath))
@@ -443,6 +450,82 @@ public partial class MainForm : Form
         {
             case "openPath":   OpenFilePathFromLink(path);   break;
             case "revealPath": RevealFilePathFromLink(path); break;
+        }
+    }
+
+    /// <summary>
+    /// Cancels any navigation that would replace the bundled
+    /// <c>output.html</c> document with another page, then hands web URLs
+    /// (http/https/mailto) off to the system default browser via
+    /// <see cref="LaunchInDefaultBrowser"/>.
+    ///
+    /// The two schemes that MUST be allowed through are <c>file:</c>
+    /// (the initial Navigate call in <see cref="InitializeWebViewAsync"/>
+    /// targets the bundled output.html via file://) and <c>about:</c>
+    /// (used internally by the WebView2 runtime during startup and
+    /// when clearing). Everything else is cancelled here, including the
+    /// custom <c>kp-path:</c> scheme -- which output.js intercepts at
+    /// the click level via preventDefault, but cancelling at the
+    /// navigation level too means a stray middle-click or keyboard
+    /// activation cannot blow the transcript away either.
+    /// </summary>
+    private void WebView_NavigationStarting(
+        object? sender,
+        Microsoft.Web.WebView2.Core.CoreWebView2NavigationStartingEventArgs e)
+    {
+        if (string.IsNullOrEmpty(e.Uri)) return;
+
+        if (e.Uri.StartsWith("file:",  StringComparison.OrdinalIgnoreCase)) return;
+        if (e.Uri.StartsWith("about:", StringComparison.OrdinalIgnoreCase)) return;
+
+        e.Cancel = true;
+        LaunchInDefaultBrowser(e.Uri);
+    }
+
+    /// <summary>
+    /// Handles target="_blank" anchors and <c>window.open</c> calls.
+    /// Always sets <c>Handled = true</c> so the WebView2 runtime does
+    /// not spawn a new popup window, then routes web URLs through the
+    /// system default browser.
+    /// </summary>
+    private void WebView_NewWindowRequested(
+        object? sender,
+        Microsoft.Web.WebView2.Core.CoreWebView2NewWindowRequestedEventArgs e)
+    {
+        e.Handled = true;
+        LaunchInDefaultBrowser(e.Uri);
+    }
+
+    /// <summary>
+    /// Shell-executes <paramref name="url"/> with the OS default handler,
+    /// restricted to a small allowlist of safe schemes (http, https,
+    /// mailto). Any other scheme is silently ignored so that custom
+    /// schemes used internally (e.g. kp-path:) cannot be smuggled into
+    /// <see cref="System.Diagnostics.Process.Start(System.Diagnostics.ProcessStartInfo)"/>.
+    /// </summary>
+    private static void LaunchInDefaultBrowser(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return;
+
+        if (!url.StartsWith("http:",   StringComparison.OrdinalIgnoreCase)
+         && !url.StartsWith("https:",  StringComparison.OrdinalIgnoreCase)
+         && !url.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName        = url,
+                UseShellExecute = true,
+            });
+        }
+        catch
+        {
+            // Best-effort: a missing or misconfigured default browser
+            // should not crash the app or log noisily.
         }
     }
 
