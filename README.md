@@ -20,7 +20,7 @@ A Windows desktop GUI for the [GitHub Copilot SDK](libs/copilot-sdk). GoPilot wr
 - Plan, Autopilot, and Fleet modes alongside Standard chat.
 - Tool permission dialog with Allow / Approve Similar / Deny, plus an Auto-approve toggle.
 - Caveman Mode: optional client-side prompt compression to cut tokens.
-- Active option toggles show as coloured badges on the Options button.
+- All option toggles show as badges on the Options button in a fixed order; enabled options appear in full colour and disabled options are greyed out.
 - Sending while a turn is in flight interrupts it instead of queueing.
 - Dark theme throughout.
 - Self-update check.

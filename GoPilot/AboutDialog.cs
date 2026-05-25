@@ -69,7 +69,7 @@ internal sealed class AboutDialog : Form
 
 		var linkRepo = new LinkLabel
 		{
-			Text         = "https://github.com/gsnook/gopilot",
+			Text         = "https://github.com/mighty-bean/GoPilot",
 			LinkColor    = Color.FromArgb(120, 180, 230),
 			ActiveLinkColor = Color.FromArgb(160, 210, 255),
 			VisitedLinkColor = Color.FromArgb(120, 180, 230),

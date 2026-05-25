@@ -23,7 +23,7 @@ internal static class CatalogProviderRegistry
 			.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
 			?? Assembly.GetExecutingAssembly().GetName().Version?.ToString()
 			?? "0.0.0";
-		c.DefaultRequestHeaders.UserAgent.ParseAdd($"GoPilot/{version} (+https://github.com/gsnook/kopilot)");
+		c.DefaultRequestHeaders.UserAgent.ParseAdd($"GoPilot/{version} (+https://github.com/mighty-bean/GoPilot)");
 		c.DefaultRequestHeaders.Accept.ParseAdd("application/json");
 		return c;
 	});
