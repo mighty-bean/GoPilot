@@ -32,6 +32,8 @@ public partial class MainForm : Form
     // Structured output blocks feeding the WebView2 Rendered tab
     private readonly List<OutputBlock> _outputBlocks = new();
     private bool _webViewReady = false;
+    // The single file: URI that the WebView2 is allowed to navigate to.
+    private string? _outputHtmlUri;
     // Rolling meta block used by AppendOutput so plain-text status/setup lines
     // appear in the Rendered tab as well as the Raw tab. Reset (closed) whenever
     // an explicit non-meta WebView block is appended or the output is cleared.
@@ -370,6 +372,15 @@ public partial class MainForm : Form
                 .CreateAsync(null, userDataFolder);
             await webViewOutput.EnsureCoreWebView2Async(env);
 
+            // ── Lock down the WebView2 so it behaves as a pure display
+            // surface, not a general-purpose browser. Disable navigation
+            // affordances the user could accidentally trigger.
+            var settings = webViewOutput.CoreWebView2.Settings;
+            settings.AreDefaultContextMenusEnabled   = false;
+            settings.AreBrowserAcceleratorKeysEnabled = false;
+            settings.IsStatusBarEnabled              = false;
+            settings.AreDevToolsEnabled              = false;
+
             // The Rendered tab posts JSON messages (e.g. file-path link
             // clicks) back to us via window.chrome.webview.postMessage.
             // Wire the receiver before navigation so no early message is
@@ -380,14 +391,17 @@ public partial class MainForm : Form
             // assignments) and popup window requests (target="_blank", window.open).
             // Any web URL is routed to the system default browser so the
             // Rendered tab never replaces the transcript with a remote page.
-            webViewOutput.CoreWebView2.NavigationStarting  += WebView_NavigationStarting;
-            webViewOutput.CoreWebView2.NewWindowRequested += WebView_NewWindowRequested;
+            webViewOutput.CoreWebView2.NavigationStarting       += WebView_NavigationStarting;
+            webViewOutput.CoreWebView2.FrameNavigationStarting  += WebView_FrameNavigationStarting;
+            webViewOutput.CoreWebView2.NewWindowRequested        += WebView_NewWindowRequested;
+            webViewOutput.CoreWebView2.NavigationCompleted       += WebView_NavigationCompleted;
 
             // Navigate to the bundled output.html
             var htmlPath = Path.Combine(AppContext.BaseDirectory, "web", "output.html");
             if (File.Exists(htmlPath))
             {
-                webViewOutput.CoreWebView2.Navigate(new Uri(htmlPath).AbsoluteUri);
+                _outputHtmlUri = new Uri(htmlPath).AbsoluteUri;
+                webViewOutput.CoreWebView2.Navigate(_outputHtmlUri);
                 _webViewReady = true;
             }
             else
@@ -459,15 +473,12 @@ public partial class MainForm : Form
     /// (http/https/mailto) off to the system default browser via
     /// <see cref="LaunchInDefaultBrowser"/>.
     ///
-    /// The two schemes that MUST be allowed through are <c>file:</c>
-    /// (the initial Navigate call in <see cref="InitializeWebViewAsync"/>
-    /// targets the bundled output.html via file://) and <c>about:</c>
-    /// (used internally by the WebView2 runtime during startup and
-    /// when clearing). Everything else is cancelled here, including the
-    /// custom <c>kp-path:</c> scheme -- which output.js intercepts at
-    /// the click level via preventDefault, but cancelling at the
-    /// navigation level too means a stray middle-click or keyboard
-    /// activation cannot blow the transcript away either.
+    /// Only the exact <c>file:</c> URI for our bundled output.html is
+    /// allowed through (needed for the initial load and recovery
+    /// re-navigation). The <c>about:</c> scheme is allowed for
+    /// internal WebView2 runtime operations. Everything else is
+    /// cancelled, including the custom <c>kp-path:</c> scheme and
+    /// any stray <c>file:</c> links the LLM may have generated.
     /// </summary>
     private void WebView_NavigationStarting(
         object? sender,
@@ -475,11 +486,85 @@ public partial class MainForm : Form
     {
         if (string.IsNullOrEmpty(e.Uri)) return;
 
-        if (e.Uri.StartsWith("file:",  StringComparison.OrdinalIgnoreCase)) return;
+        // Allow only our exact output.html file URI
+        if (_outputHtmlUri != null
+            && e.Uri.Equals(_outputHtmlUri, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
         if (e.Uri.StartsWith("about:", StringComparison.OrdinalIgnoreCase)) return;
 
         e.Cancel = true;
         LaunchInDefaultBrowser(e.Uri);
+    }
+
+    /// <summary>
+    /// Blocks all iframe/frame navigations. The Rendered tab should
+    /// never load external content inside embedded frames.
+    /// </summary>
+    private void WebView_FrameNavigationStarting(
+        object? sender,
+        Microsoft.Web.WebView2.Core.CoreWebView2NavigationStartingEventArgs e)
+    {
+        if (string.IsNullOrEmpty(e.Uri)) return;
+
+        // Allow about:blank (used by some internal frame init)
+        if (e.Uri.StartsWith("about:", StringComparison.OrdinalIgnoreCase)) return;
+
+        e.Cancel = true;
+    }
+
+    /// <summary>
+    /// Safety net: if a navigation completes and we are NOT on our
+    /// expected output.html page (e.g. the user managed to trigger
+    /// Back/Forward before settings were locked down, or some edge
+    /// case slipped through), re-navigate to output.html and replay
+    /// all accumulated output blocks.
+    /// </summary>
+    private void WebView_NavigationCompleted(
+        object? sender,
+        Microsoft.Web.WebView2.Core.CoreWebView2NavigationCompletedEventArgs e)
+    {
+        if (_outputHtmlUri == null || !_webViewReady) return;
+
+        var currentUri = webViewOutput.CoreWebView2.Source;
+        if (currentUri != null
+            && currentUri.Equals(_outputHtmlUri, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        // We are on an unexpected page -- recover by re-navigating
+        // to output.html. The next NavigationCompleted will hit the
+        // early-return above, then we replay all blocks.
+        webViewOutput.CoreWebView2.Navigate(_outputHtmlUri);
+        // Use a one-shot handler to replay content after re-navigation
+        webViewOutput.CoreWebView2.NavigationCompleted += ReplayAfterRecovery;
+    }
+
+    /// <summary>
+    /// One-shot handler that replays all accumulated output blocks
+    /// into the WebView after a recovery re-navigation to output.html.
+    /// </summary>
+    private void ReplayAfterRecovery(
+        object? sender,
+        Microsoft.Web.WebView2.Core.CoreWebView2NavigationCompletedEventArgs e)
+    {
+        // Unsubscribe immediately -- this is a one-shot
+        webViewOutput.CoreWebView2.NavigationCompleted -= ReplayAfterRecovery;
+
+        if (!e.IsSuccess) return;
+
+        foreach (var block in _outputBlocks)
+        {
+            WebViewAppendBlockInternal(block);
+            if (block.IsComplete)
+            {
+                var js = $"finalizeBlock({JsString(block.Id)})";
+                _ = webViewOutput.CoreWebView2.ExecuteScriptAsync(js);
+            }
+        }
     }
 
     /// <summary>

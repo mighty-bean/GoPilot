@@ -120,6 +120,20 @@
 		postPathMessage("openPath", pathFromAnchor(a));
 	});
 
+	// Catch-all: prevent default navigation for ALL anchor clicks.
+	// Non-kp-path links (http, https, mailto, etc.) are handled by the
+	// C# NavigationStarting handler which opens them in the system
+	// browser. This preventDefault ensures the WebView never even
+	// attempts a top-level navigation from a click.
+	document.addEventListener("click", function (e) {
+		var a = e.target && e.target.closest && e.target.closest("a[href]");
+		if (!a) return;
+		// kp-path links are already fully handled above
+		if (isPathAnchor(a)) return;
+		e.preventDefault();
+		e.stopPropagation();
+	});
+
 	document.addEventListener("contextmenu", function (e) {
 		var a = e.target && e.target.closest && e.target.closest("a[href]");
 		if (!isPathAnchor(a)) return;
