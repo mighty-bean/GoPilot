@@ -1196,7 +1196,7 @@ public partial class MainForm : Form
 
                 // Mirror any pasted clipboard images as inline thumbnails beneath
                 // the user echo. Image bytes still flow to the Copilot SDK via
-                // UserMessageAttachmentBlob (SendMessageAsync above); this is a
+                // AttachmentBlob (SendMessageAsync above); this is a
                 // visual courtesy only -- the prompt text itself is unchanged,
                 // so this does not increase upstream tokens.
                 AppendPastedImagePreviews(userBlock, extraAttachments);
@@ -2746,7 +2746,7 @@ public partial class MainForm : Form
     /// the same way a file picked through "Add File..." is attached: a chip
     /// appears in the attachments strip, a relative-path @reference token is
     /// inserted at the caret, and the file's bytes are forwarded to Copilot as
-    /// a UserMessageAttachment when the user hits Send. There is no dedicated
+    /// an Attachment when the user hits Send. There is no dedicated
     /// "@prompt:name" token because the SDK has no concept of a named prompt --
     /// prompts are user-curated content the model only sees once attached.
     /// </summary>

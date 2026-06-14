@@ -461,7 +461,7 @@
 	 *
 	 * The images are display-only: nothing here changes what was sent to
 	 * the Copilot SDK. The picture bytes still travel as a binary blob
-	 * attachment via UserMessageAttachmentBlob; this function only
+	 * attachment via AttachmentBlob; this function only
 	 * mirrors them visually in the transcript.
 	 *
 	 * @param {string} id     - Block ID previously returned by appendBlock.

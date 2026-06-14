@@ -975,7 +975,7 @@ public sealed class CopilotService : IAsyncDisposable
         if (_mainSession == null)
             await CreateMainSessionAsync();
 
-        List<UserMessageAttachment>? attachments = null;
+        List<Attachment>? attachments = null;
         if (attachmentPaths.Count > 0)
         {
             attachments = attachmentPaths
@@ -1004,7 +1004,7 @@ public sealed class CopilotService : IAsyncDisposable
     /// attachments with their MIME type (required so the model actually sees the
     /// picture); everything else is sent as a path-based file attachment.
     /// </summary>
-    private static UserMessageAttachment BuildAttachment(string path)
+    private static Attachment BuildAttachment(string path)
     {
         var mime = GetImageMimeType(path);
         if (mime != null && File.Exists(path))
@@ -1012,7 +1012,7 @@ public sealed class CopilotService : IAsyncDisposable
             try
             {
                 var bytes = File.ReadAllBytes(path);
-                return new UserMessageAttachmentBlob
+                return new AttachmentBlob
                 {
                     Data        = Convert.ToBase64String(bytes),
                     DisplayName = Path.GetFileName(path),
@@ -1025,7 +1025,7 @@ public sealed class CopilotService : IAsyncDisposable
             }
         }
 
-        return new UserMessageAttachmentFile
+        return new AttachmentFile
         {
             Path        = path,
             DisplayName = Path.GetFileName(path),
