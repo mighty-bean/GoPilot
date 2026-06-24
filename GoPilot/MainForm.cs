@@ -243,6 +243,8 @@ public partial class MainForm : Form
                     ? "CAVEMAN MODE ON. From now on: caveman speak. Fewest tokens. Nouns and verbs. " +
                       "No grammar filler (the, is, are, of). Short words. Be blunt. " +
                       "Skip openers, closures, preambles, filler transitions. " +
+                      "Apply this to ALL prose output, including your reasoning/thinking output, " +
+                      "not just the final response. " +
                       "Preserve code, paths, command syntax, and tool output verbatim."
                     : "CAVEMAN MODE OFF. From now on: respond normally with proper grammar, " +
                       "complete sentences, and your usual level of explanation.";

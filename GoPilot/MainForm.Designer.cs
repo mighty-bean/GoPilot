@@ -115,7 +115,8 @@ partial class MainForm
         // 
         splitContainerMain.BackColor = Color.FromArgb(64, 64, 64);
         splitContainerMain.Dock = DockStyle.Fill;
-        splitContainerMain.Location = new Point(0, 24);
+        splitContainerMain.Location = new Point(0, 35);
+        splitContainerMain.Margin = new Padding(4, 5, 4, 5);
         splitContainerMain.Name = "splitContainerMain";
         splitContainerMain.Orientation = Orientation.Horizontal;
         // 
@@ -131,8 +132,9 @@ partial class MainForm
         // 
         splitContainerMain.Panel2.Controls.Add(tabControlOutput);
         splitContainerMain.Panel2MinSize = 180;
-        splitContainerMain.Size = new Size(940, 570);
-        splitContainerMain.SplitterDistance = 251;
+        splitContainerMain.Size = new Size(1343, 959);
+        splitContainerMain.SplitterDistance = 422;
+        splitContainerMain.SplitterWidth = 7;
         splitContainerMain.TabIndex = 0;
         // 
         // richTextBoxPrompt
@@ -144,10 +146,11 @@ partial class MainForm
         richTextBoxPrompt.Dock = DockStyle.Fill;
         richTextBoxPrompt.Font = new Font("Segoe UI", 11F);
         richTextBoxPrompt.ForeColor = Color.FromArgb(218, 218, 218);
-        richTextBoxPrompt.Location = new Point(20, 38);
+        richTextBoxPrompt.Location = new Point(28, 63);
+        richTextBoxPrompt.Margin = new Padding(4, 5, 4, 5);
         richTextBoxPrompt.Name = "richTextBoxPrompt";
         richTextBoxPrompt.ScrollBars = RichTextBoxScrollBars.Vertical;
-        richTextBoxPrompt.Size = new Size(920, 178);
+        richTextBoxPrompt.Size = new Size(1315, 301);
         richTextBoxPrompt.TabIndex = 1;
         richTextBoxPrompt.Text = "";
         toolTipMain.SetToolTip(richTextBoxPrompt, "Ctrl+Enter to send");
@@ -158,9 +161,10 @@ partial class MainForm
         panelAttachments.Controls.Add(flowLayoutPanelChips);
         panelAttachments.Controls.Add(labelAttach);
         panelAttachments.Dock = DockStyle.Bottom;
-        panelAttachments.Location = new Point(20, 216);
+        panelAttachments.Location = new Point(28, 364);
+        panelAttachments.Margin = new Padding(4, 5, 4, 5);
         panelAttachments.Name = "panelAttachments";
-        panelAttachments.Size = new Size(920, 35);
+        panelAttachments.Size = new Size(1315, 58);
         panelAttachments.TabIndex = 0;
         panelAttachments.Visible = false;
         // 
@@ -169,7 +173,8 @@ partial class MainForm
         flowLayoutPanelChips.AutoSize = true;
         flowLayoutPanelChips.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         flowLayoutPanelChips.BackColor = Color.FromArgb(64, 64, 64);
-        flowLayoutPanelChips.Location = new Point(90, 3);
+        flowLayoutPanelChips.Location = new Point(129, 5);
+        flowLayoutPanelChips.Margin = new Padding(4, 5, 4, 5);
         flowLayoutPanelChips.Name = "flowLayoutPanelChips";
         flowLayoutPanelChips.Size = new Size(0, 0);
         flowLayoutPanelChips.TabIndex = 1;
@@ -180,9 +185,10 @@ partial class MainForm
         labelAttach.AutoSize = true;
         labelAttach.Font = new Font("Segoe UI", 9F);
         labelAttach.ForeColor = Color.FromArgb(148, 148, 148);
-        labelAttach.Location = new Point(6, 6);
+        labelAttach.Location = new Point(9, 10);
+        labelAttach.Margin = new Padding(4, 0, 4, 0);
         labelAttach.Name = "labelAttach";
-        labelAttach.Size = new Size(78, 15);
+        labelAttach.Size = new Size(116, 25);
         labelAttach.TabIndex = 0;
         labelAttach.Text = "Attachments:";
         // 
@@ -193,9 +199,10 @@ partial class MainForm
         panelHistoryNav.Controls.Add(buttonHistoryNext);
         panelHistoryNav.Controls.Add(buttonHistoryPrev);
         panelHistoryNav.Dock = DockStyle.Left;
-        panelHistoryNav.Location = new Point(0, 38);
+        panelHistoryNav.Location = new Point(0, 63);
+        panelHistoryNav.Margin = new Padding(4, 5, 4, 5);
         panelHistoryNav.Name = "panelHistoryNav";
-        panelHistoryNav.Size = new Size(20, 213);
+        panelHistoryNav.Size = new Size(28, 359);
         panelHistoryNav.TabIndex = 3;
         // 
         // buttonHistoryNext
@@ -208,9 +215,10 @@ partial class MainForm
         buttonHistoryNext.FlatStyle = FlatStyle.Flat;
         buttonHistoryNext.Font = new Font("Segoe UI", 7F);
         buttonHistoryNext.ForeColor = Color.FromArgb(148, 148, 148);
-        buttonHistoryNext.Location = new Point(0, 191);
+        buttonHistoryNext.Location = new Point(0, 324);
+        buttonHistoryNext.Margin = new Padding(4, 5, 4, 5);
         buttonHistoryNext.Name = "buttonHistoryNext";
-        buttonHistoryNext.Size = new Size(18, 20);
+        buttonHistoryNext.Size = new Size(26, 33);
         buttonHistoryNext.TabIndex = 0;
         buttonHistoryNext.TabStop = false;
         buttonHistoryNext.Text = "▼";
@@ -228,8 +236,9 @@ partial class MainForm
         buttonHistoryPrev.Font = new Font("Segoe UI", 7F);
         buttonHistoryPrev.ForeColor = Color.FromArgb(148, 148, 148);
         buttonHistoryPrev.Location = new Point(0, 0);
+        buttonHistoryPrev.Margin = new Padding(4, 5, 4, 5);
         buttonHistoryPrev.Name = "buttonHistoryPrev";
-        buttonHistoryPrev.Size = new Size(18, 20);
+        buttonHistoryPrev.Size = new Size(26, 33);
         buttonHistoryPrev.TabIndex = 1;
         buttonHistoryPrev.TabStop = false;
         buttonHistoryPrev.Text = "▲";
@@ -250,9 +259,10 @@ partial class MainForm
         panelActions.Controls.Add(buttonSend);
         panelActions.Dock = DockStyle.Top;
         panelActions.Location = new Point(0, 0);
+        panelActions.Margin = new Padding(4, 5, 4, 5);
         panelActions.Name = "panelActions";
-        panelActions.Padding = new Padding(4, 4, 8, 4);
-        panelActions.Size = new Size(940, 38);
+        panelActions.Padding = new Padding(6, 7, 11, 7);
+        panelActions.Size = new Size(1343, 63);
         panelActions.TabIndex = 2;
         // 
         // buttonOptions
@@ -262,9 +272,10 @@ partial class MainForm
         buttonOptions.FlatStyle = FlatStyle.Flat;
         buttonOptions.Font = new Font("Segoe UI", 9F);
         buttonOptions.ForeColor = Color.FromArgb(218, 218, 218);
-        buttonOptions.Location = new Point(554, 4);
+        buttonOptions.Location = new Point(791, 7);
+        buttonOptions.Margin = new Padding(4, 5, 4, 5);
         buttonOptions.Name = "buttonOptions";
-        buttonOptions.Size = new Size(229, 28);
+        buttonOptions.Size = new Size(300, 47);
         buttonOptions.TabIndex = 0;
         buttonOptions.Text = "Options: ▾";
         toolTipMain.SetToolTip(buttonOptions, "Toggle session options (Auto-approve tools, Fleet mode, Caveman Mode, Show Working Steps)");
@@ -275,9 +286,10 @@ partial class MainForm
         labelModel.AutoSize = true;
         labelModel.Font = new Font("Segoe UI", 9F);
         labelModel.ForeColor = Color.FromArgb(218, 218, 218);
-        labelModel.Location = new Point(7, 11);
+        labelModel.Location = new Point(10, 18);
+        labelModel.Margin = new Padding(4, 0, 4, 0);
         labelModel.Name = "labelModel";
-        labelModel.Size = new Size(44, 15);
+        labelModel.Size = new Size(67, 25);
         labelModel.TabIndex = 1;
         labelModel.Text = "Model:";
         // 
@@ -289,9 +301,10 @@ partial class MainForm
         comboBoxModel.Font = new Font("Segoe UI", 9F);
         comboBoxModel.ForeColor = Color.FromArgb(218, 218, 218);
         comboBoxModel.FormattingEnabled = true;
-        comboBoxModel.Location = new Point(55, 7);
+        comboBoxModel.Location = new Point(79, 12);
+        comboBoxModel.Margin = new Padding(4, 5, 4, 5);
         comboBoxModel.Name = "comboBoxModel";
-        comboBoxModel.Size = new Size(184, 23);
+        comboBoxModel.Size = new Size(261, 33);
         comboBoxModel.TabIndex = 2;
         // 
         // labelMode
@@ -299,9 +312,10 @@ partial class MainForm
         labelMode.AutoSize = true;
         labelMode.Font = new Font("Segoe UI", 9F);
         labelMode.ForeColor = Color.FromArgb(218, 218, 218);
-        labelMode.Location = new Point(251, 11);
+        labelMode.Location = new Point(359, 18);
+        labelMode.Margin = new Padding(4, 0, 4, 0);
         labelMode.Name = "labelMode";
-        labelMode.Size = new Size(41, 15);
+        labelMode.Size = new Size(63, 25);
         labelMode.TabIndex = 7;
         labelMode.Text = "Mode:";
         // 
@@ -313,9 +327,10 @@ partial class MainForm
         comboBoxMode.Font = new Font("Segoe UI", 9F);
         comboBoxMode.ForeColor = Color.FromArgb(218, 218, 218);
         comboBoxMode.FormattingEnabled = true;
-        comboBoxMode.Location = new Point(299, 7);
+        comboBoxMode.Location = new Point(427, 12);
+        comboBoxMode.Margin = new Padding(4, 5, 4, 5);
         comboBoxMode.Name = "comboBoxMode";
-        comboBoxMode.Size = new Size(92, 23);
+        comboBoxMode.Size = new Size(130, 33);
         comboBoxMode.TabIndex = 8;
         toolTipMain.SetToolTip(comboBoxMode, "Standard: normal chat  |  Plan: plan before acting  |  Autopilot: fully autonomous");
         // 
@@ -324,9 +339,10 @@ partial class MainForm
         labelEffort.AutoSize = true;
         labelEffort.Font = new Font("Segoe UI", 9F);
         labelEffort.ForeColor = Color.FromArgb(218, 218, 218);
-        labelEffort.Location = new Point(401, 11);
+        labelEffort.Location = new Point(573, 18);
+        labelEffort.Margin = new Padding(4, 0, 4, 0);
         labelEffort.Name = "labelEffort";
-        labelEffort.Size = new Size(39, 15);
+        labelEffort.Size = new Size(60, 25);
         labelEffort.TabIndex = 9;
         labelEffort.Text = "Effort:";
         // 
@@ -339,9 +355,10 @@ partial class MainForm
         comboBoxEffort.Font = new Font("Segoe UI", 9F);
         comboBoxEffort.ForeColor = Color.FromArgb(218, 218, 218);
         comboBoxEffort.FormattingEnabled = true;
-        comboBoxEffort.Location = new Point(443, 7);
+        comboBoxEffort.Location = new Point(633, 12);
+        comboBoxEffort.Margin = new Padding(4, 5, 4, 5);
         comboBoxEffort.Name = "comboBoxEffort";
-        comboBoxEffort.Size = new Size(81, 23);
+        comboBoxEffort.Size = new Size(114, 33);
         comboBoxEffort.TabIndex = 10;
         toolTipMain.SetToolTip(comboBoxEffort, "Reasoning effort for the selected model. Disabled when the model does not advertise reasoning-effort support.");
         // 
@@ -354,9 +371,10 @@ partial class MainForm
         buttonStop.FlatStyle = FlatStyle.Flat;
         buttonStop.Font = new Font("Segoe UI", 9F);
         buttonStop.ForeColor = Color.FromArgb(218, 218, 218);
-        buttonStop.Location = new Point(806, 4);
+        buttonStop.Location = new Point(1133, 7);
+        buttonStop.Margin = new Padding(4, 5, 4, 5);
         buttonStop.Name = "buttonStop";
-        buttonStop.Size = new Size(60, 28);
+        buttonStop.Size = new Size(104, 47);
         buttonStop.TabIndex = 4;
         buttonStop.Text = "⬛ Stop";
         toolTipMain.SetToolTip(buttonStop, "Stop the current Copilot response");
@@ -371,9 +389,10 @@ partial class MainForm
         buttonSend.FlatStyle = FlatStyle.Flat;
         buttonSend.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
         buttonSend.ForeColor = Color.FromArgb(235, 235, 235);
-        buttonSend.Location = new Point(871, 4);
+        buttonSend.Location = new Point(1244, 7);
+        buttonSend.Margin = new Padding(4, 5, 4, 5);
         buttonSend.Name = "buttonSend";
-        buttonSend.Size = new Size(60, 28);
+        buttonSend.Size = new Size(86, 47);
         buttonSend.TabIndex = 5;
         buttonSend.Text = "▶ Send";
         toolTipMain.SetToolTip(buttonSend, "Send prompt to Copilot (Ctrl+Enter)");
@@ -386,11 +405,11 @@ partial class MainForm
         tabControlOutput.Controls.Add(tabPageRaw);
         tabControlOutput.DrawMode = TabDrawMode.OwnerDrawFixed;
         tabControlOutput.ForeColor = Color.FromArgb(218, 218, 218);
-        tabControlOutput.Location = new Point(6, 0);
+        tabControlOutput.Location = new Point(9, 0);
         tabControlOutput.Margin = new Padding(0);
         tabControlOutput.Name = "tabControlOutput";
         tabControlOutput.SelectedIndex = 0;
-        tabControlOutput.Size = new Size(925, 306);
+        tabControlOutput.Size = new Size(1321, 515);
         tabControlOutput.TabIndex = 0;
         tabControlOutput.DrawItem += TabControlOutput_DrawItem;
         // 
@@ -398,10 +417,10 @@ partial class MainForm
         // 
         tabPageRendered.BackColor = Color.FromArgb(0, 0, 0);
         tabPageRendered.Controls.Add(webViewOutput);
-        tabPageRendered.Location = new Point(4, 24);
-        tabPageRendered.Margin = new Padding(3, 2, 3, 2);
+        tabPageRendered.Location = new Point(4, 34);
+        tabPageRendered.Margin = new Padding(4, 3, 4, 3);
         tabPageRendered.Name = "tabPageRendered";
-        tabPageRendered.Size = new Size(917, 278);
+        tabPageRendered.Size = new Size(1313, 477);
         tabPageRendered.TabIndex = 0;
         tabPageRendered.Text = "Rendered";
         // 
@@ -413,9 +432,9 @@ partial class MainForm
         webViewOutput.Dock = DockStyle.Fill;
         webViewOutput.ForeColor = Color.DimGray;
         webViewOutput.Location = new Point(0, 0);
-        webViewOutput.Margin = new Padding(3, 2, 3, 2);
+        webViewOutput.Margin = new Padding(4, 3, 4, 3);
         webViewOutput.Name = "webViewOutput";
-        webViewOutput.Size = new Size(917, 278);
+        webViewOutput.Size = new Size(1313, 477);
         webViewOutput.TabIndex = 0;
         webViewOutput.ZoomFactor = 1D;
         // 
@@ -423,10 +442,10 @@ partial class MainForm
         // 
         tabPageRaw.BackColor = Color.FromArgb(0, 0, 0);
         tabPageRaw.Controls.Add(richTextBoxOutput);
-        tabPageRaw.Location = new Point(4, 24);
-        tabPageRaw.Margin = new Padding(3, 2, 3, 2);
+        tabPageRaw.Location = new Point(4, 34);
+        tabPageRaw.Margin = new Padding(4, 3, 4, 3);
         tabPageRaw.Name = "tabPageRaw";
-        tabPageRaw.Size = new Size(917, 237);
+        tabPageRaw.Size = new Size(1313, 474);
         tabPageRaw.TabIndex = 1;
         tabPageRaw.Text = "Raw";
         // 
@@ -439,11 +458,11 @@ partial class MainForm
         richTextBoxOutput.Font = new Font("Consolas", 10F);
         richTextBoxOutput.ForeColor = Color.FromArgb(218, 218, 218);
         richTextBoxOutput.Location = new Point(0, 0);
-        richTextBoxOutput.Margin = new Padding(3, 2, 3, 2);
+        richTextBoxOutput.Margin = new Padding(4, 3, 4, 3);
         richTextBoxOutput.Name = "richTextBoxOutput";
         richTextBoxOutput.ReadOnly = true;
         richTextBoxOutput.ScrollBars = RichTextBoxScrollBars.Vertical;
-        richTextBoxOutput.Size = new Size(917, 237);
+        richTextBoxOutput.Size = new Size(1313, 474);
         richTextBoxOutput.TabIndex = 0;
         richTextBoxOutput.Text = "";
         // 
@@ -454,7 +473,7 @@ partial class MainForm
         contextMenuOptions.ImageScalingSize = new Size(32, 32);
         contextMenuOptions.Items.AddRange(new ToolStripItem[] { menuOptionAutoApprove, menuOptionFleet, menuSessionCaveman, menuSessionShowSteps });
         contextMenuOptions.Name = "contextMenuOptions";
-        contextMenuOptions.Size = new Size(183, 92);
+        contextMenuOptions.Size = new Size(249, 132);
         // 
         // menuOptionAutoApprove
         // 
@@ -462,7 +481,7 @@ partial class MainForm
         menuOptionAutoApprove.CheckOnClick = true;
         menuOptionAutoApprove.ForeColor = Color.FromArgb(218, 218, 218);
         menuOptionAutoApprove.Name = "menuOptionAutoApprove";
-        menuOptionAutoApprove.Size = new Size(182, 22);
+        menuOptionAutoApprove.Size = new Size(248, 32);
         menuOptionAutoApprove.Text = "&Auto-approve tools";
         menuOptionAutoApprove.ToolTipText = resources.GetString("menuOptionAutoApprove.ToolTipText");
         // 
@@ -472,7 +491,7 @@ partial class MainForm
         menuOptionFleet.CheckOnClick = true;
         menuOptionFleet.ForeColor = Color.FromArgb(218, 218, 218);
         menuOptionFleet.Name = "menuOptionFleet";
-        menuOptionFleet.Size = new Size(182, 22);
+        menuOptionFleet.Size = new Size(248, 32);
         menuOptionFleet.Text = "&Fleet mode";
         menuOptionFleet.ToolTipText = "Activate Fleet mode — Copilot spawns and coordinates multiple sub-agents to work in parallel on complex tasks";
         // 
@@ -482,7 +501,7 @@ partial class MainForm
         menuSessionCaveman.CheckOnClick = true;
         menuSessionCaveman.ForeColor = Color.FromArgb(218, 218, 218);
         menuSessionCaveman.Name = "menuSessionCaveman";
-        menuSessionCaveman.Size = new Size(182, 22);
+        menuSessionCaveman.Size = new Size(248, 32);
         menuSessionCaveman.Text = "Ca&veman Mode";
         menuSessionCaveman.ToolTipText = "Reduce each prompt to caveman speak before sending. Saves tokens; may lose nuance.";
         // 
@@ -492,7 +511,7 @@ partial class MainForm
         menuSessionShowSteps.CheckOnClick = true;
         menuSessionShowSteps.ForeColor = Color.FromArgb(218, 218, 218);
         menuSessionShowSteps.Name = "menuSessionShowSteps";
-        menuSessionShowSteps.Size = new Size(182, 22);
+        menuSessionShowSteps.Size = new Size(248, 32);
         menuSessionShowSteps.Text = "S&how Working Steps";
         menuSessionShowSteps.ToolTipText = "Keep Reasoning and Tool sections expanded after they finish (off = auto-collapse to a one-line summary).";
         // 
@@ -504,8 +523,8 @@ partial class MainForm
         menuStripMain.Items.AddRange(new ToolStripItem[] { menuSession, menuReferences, menuTools, menuHelp });
         menuStripMain.Location = new Point(0, 0);
         menuStripMain.Name = "menuStripMain";
-        menuStripMain.Padding = new Padding(4, 2, 0, 2);
-        menuStripMain.Size = new Size(940, 24);
+        menuStripMain.Padding = new Padding(6, 3, 0, 3);
+        menuStripMain.Size = new Size(1343, 35);
         menuStripMain.TabIndex = 2;
         // 
         // menuSession
@@ -513,7 +532,7 @@ partial class MainForm
         menuSession.DropDownItems.AddRange(new ToolStripItem[] { menuSessionNew, menuSessionPast, menuSessionSeparatorNew, menuSessionSummarize, menuSessionClear, menuSessionRefresh });
         menuSession.ForeColor = Color.FromArgb(218, 218, 218);
         menuSession.Name = "menuSession";
-        menuSession.Size = new Size(58, 20);
+        menuSession.Size = new Size(88, 29);
         menuSession.Text = "&Session";
         // 
         // menuSessionNew
@@ -521,7 +540,7 @@ partial class MainForm
         menuSessionNew.BackColor = Color.FromArgb(56, 56, 56);
         menuSessionNew.ForeColor = Color.FromArgb(218, 218, 218);
         menuSessionNew.Name = "menuSessionNew";
-        menuSessionNew.Size = new Size(167, 22);
+        menuSessionNew.Size = new Size(261, 34);
         menuSessionNew.Text = "📂 &New Session...";
         menuSessionNew.ToolTipText = "Select a workspace folder and start a new Copilot session";
         // 
@@ -530,7 +549,7 @@ partial class MainForm
         menuSessionPast.BackColor = Color.FromArgb(56, 56, 56);
         menuSessionPast.ForeColor = Color.FromArgb(218, 218, 218);
         menuSessionPast.Name = "menuSessionPast";
-        menuSessionPast.Size = new Size(167, 22);
+        menuSessionPast.Size = new Size(261, 34);
         menuSessionPast.Text = "📋 &Past Sessions...";
         menuSessionPast.ToolTipText = "Browse persisted sessions to resume or delete them";
         // 
@@ -539,14 +558,14 @@ partial class MainForm
         menuSessionSeparatorNew.BackColor = Color.FromArgb(56, 56, 56);
         menuSessionSeparatorNew.ForeColor = Color.FromArgb(218, 218, 218);
         menuSessionSeparatorNew.Name = "menuSessionSeparatorNew";
-        menuSessionSeparatorNew.Size = new Size(164, 6);
+        menuSessionSeparatorNew.Size = new Size(258, 6);
         // 
         // menuSessionSummarize
         // 
         menuSessionSummarize.BackColor = Color.FromArgb(56, 56, 56);
         menuSessionSummarize.ForeColor = Color.FromArgb(218, 218, 218);
         menuSessionSummarize.Name = "menuSessionSummarize";
-        menuSessionSummarize.Size = new Size(167, 22);
+        menuSessionSummarize.Size = new Size(261, 34);
         menuSessionSummarize.Text = "📝 S&ummarize";
         menuSessionSummarize.ToolTipText = "Ask Copilot to summarize the session so far";
         // 
@@ -555,7 +574,7 @@ partial class MainForm
         menuSessionClear.BackColor = Color.FromArgb(56, 56, 56);
         menuSessionClear.ForeColor = Color.FromArgb(218, 218, 218);
         menuSessionClear.Name = "menuSessionClear";
-        menuSessionClear.Size = new Size(167, 22);
+        menuSessionClear.Size = new Size(261, 34);
         menuSessionClear.Text = "🗑 &Clear Output";
         menuSessionClear.ToolTipText = "Clear the current output window";
         // 
@@ -565,7 +584,7 @@ partial class MainForm
         menuSessionRefresh.DropDownItems.AddRange(new ToolStripItem[] { menuSessionRefreshCompact, menuSessionRefreshRestart, menuSessionRefreshFresh });
         menuSessionRefresh.ForeColor = Color.FromArgb(218, 218, 218);
         menuSessionRefresh.Name = "menuSessionRefresh";
-        menuSessionRefresh.Size = new Size(167, 22);
+        menuSessionRefresh.Size = new Size(261, 34);
         menuSessionRefresh.Text = "💤 &Refresh";
         menuSessionRefresh.ToolTipText = "Free up context window — Compact (in place) or Restart with summary";
         // 
@@ -574,7 +593,7 @@ partial class MainForm
         menuSessionRefreshCompact.BackColor = Color.FromArgb(56, 56, 56);
         menuSessionRefreshCompact.ForeColor = Color.FromArgb(218, 218, 218);
         menuSessionRefreshCompact.Name = "menuSessionRefreshCompact";
-        menuSessionRefreshCompact.Size = new Size(288, 22);
+        menuSessionRefreshCompact.Size = new Size(437, 34);
         menuSessionRefreshCompact.Text = "⚡ &Compact (fast, keeps session)";
         menuSessionRefreshCompact.ToolTipText = "Ask the CLI to summarise history in place. Session ID is preserved.";
         // 
@@ -583,7 +602,7 @@ partial class MainForm
         menuSessionRefreshRestart.BackColor = Color.FromArgb(56, 56, 56);
         menuSessionRefreshRestart.ForeColor = Color.FromArgb(218, 218, 218);
         menuSessionRefreshRestart.Name = "menuSessionRefreshRestart";
-        menuSessionRefreshRestart.Size = new Size(288, 22);
+        menuSessionRefreshRestart.Size = new Size(437, 34);
         menuSessionRefreshRestart.Text = "🔄 &Restart with summary (clean window)";
         menuSessionRefreshRestart.ToolTipText = "Save a Markdown dream file, open a fresh session in this folder, and seed it with the summary.";
         // 
@@ -592,7 +611,7 @@ partial class MainForm
         menuSessionRefreshFresh.BackColor = Color.FromArgb(56, 56, 56);
         menuSessionRefreshFresh.ForeColor = Color.FromArgb(218, 218, 218);
         menuSessionRefreshFresh.Name = "menuSessionRefreshFresh";
-        menuSessionRefreshFresh.Size = new Size(288, 22);
+        menuSessionRefreshFresh.Size = new Size(437, 34);
         menuSessionRefreshFresh.Text = "🆕 &Fresh start (no carry-over)";
         menuSessionRefreshFresh.ToolTipText = "Discard all context and open a brand-new session in this folder, as if you had just used New Session.";
         // 
@@ -601,7 +620,7 @@ partial class MainForm
         menuReferences.DropDownItems.AddRange(new ToolStripItem[] { menuReferencesAddFile, menuReferencesAddFolder, menuReferencesSeparator1, menuReferencesListAgents, menuReferencesListSkills, menuReferencesListPrompts });
         menuReferences.ForeColor = Color.FromArgb(218, 218, 218);
         menuReferences.Name = "menuReferences";
-        menuReferences.Size = new Size(76, 20);
+        menuReferences.Size = new Size(112, 29);
         menuReferences.Text = "&References";
         // 
         // menuReferencesAddFile
@@ -609,7 +628,7 @@ partial class MainForm
         menuReferencesAddFile.BackColor = Color.FromArgb(56, 56, 56);
         menuReferencesAddFile.ForeColor = Color.FromArgb(218, 218, 218);
         menuReferencesAddFile.Name = "menuReferencesAddFile";
-        menuReferencesAddFile.Size = new Size(156, 22);
+        menuReferencesAddFile.Size = new Size(245, 34);
         menuReferencesAddFile.Text = "📄 Add &File...";
         menuReferencesAddFile.ToolTipText = "Attach a file to the prompt";
         // 
@@ -618,7 +637,7 @@ partial class MainForm
         menuReferencesAddFolder.BackColor = Color.FromArgb(56, 56, 56);
         menuReferencesAddFolder.ForeColor = Color.FromArgb(218, 218, 218);
         menuReferencesAddFolder.Name = "menuReferencesAddFolder";
-        menuReferencesAddFolder.Size = new Size(156, 22);
+        menuReferencesAddFolder.Size = new Size(245, 34);
         menuReferencesAddFolder.Text = "📁 Add F&older...";
         menuReferencesAddFolder.ToolTipText = "Attach a folder to the prompt";
         // 
@@ -627,14 +646,14 @@ partial class MainForm
         menuReferencesSeparator1.BackColor = Color.FromArgb(56, 56, 56);
         menuReferencesSeparator1.ForeColor = Color.FromArgb(218, 218, 218);
         menuReferencesSeparator1.Name = "menuReferencesSeparator1";
-        menuReferencesSeparator1.Size = new Size(153, 6);
+        menuReferencesSeparator1.Size = new Size(242, 6);
         // 
         // menuReferencesListAgents
         // 
         menuReferencesListAgents.BackColor = Color.FromArgb(56, 56, 56);
         menuReferencesListAgents.ForeColor = Color.FromArgb(218, 218, 218);
         menuReferencesListAgents.Name = "menuReferencesListAgents";
-        menuReferencesListAgents.Size = new Size(156, 22);
+        menuReferencesListAgents.Size = new Size(245, 34);
         menuReferencesListAgents.Text = "List &Agents...";
         menuReferencesListAgents.ToolTipText = "Show every custom agent registered in the current session";
         // 
@@ -643,7 +662,7 @@ partial class MainForm
         menuReferencesListSkills.BackColor = Color.FromArgb(56, 56, 56);
         menuReferencesListSkills.ForeColor = Color.FromArgb(218, 218, 218);
         menuReferencesListSkills.Name = "menuReferencesListSkills";
-        menuReferencesListSkills.Size = new Size(156, 22);
+        menuReferencesListSkills.Size = new Size(245, 34);
         menuReferencesListSkills.Text = "List &Skills...";
         menuReferencesListSkills.ToolTipText = "Show every skill discovered across the current session's tier folders";
         // 
@@ -652,7 +671,7 @@ partial class MainForm
         menuReferencesListPrompts.BackColor = Color.FromArgb(56, 56, 56);
         menuReferencesListPrompts.ForeColor = Color.FromArgb(218, 218, 218);
         menuReferencesListPrompts.Name = "menuReferencesListPrompts";
-        menuReferencesListPrompts.Size = new Size(156, 22);
+        menuReferencesListPrompts.Size = new Size(245, 34);
         menuReferencesListPrompts.Text = "List &Prompts...";
         menuReferencesListPrompts.ToolTipText = "Show every prompt template found under prompts/ in the current session's tier folders";
         // 
@@ -661,7 +680,7 @@ partial class MainForm
         menuTools.DropDownItems.AddRange(new ToolStripItem[] { menuToolsPowershell, menuToolsExplorer, menuToolsVSCode, menuToolsSeparator1, menuToolsSkillTree, menuToolsSkillSources, menuToolsBrowseCatalog, menuToolsSeparator2, menuToolsPermissions });
         menuTools.ForeColor = Color.FromArgb(218, 218, 218);
         menuTools.Name = "menuTools";
-        menuTools.Size = new Size(47, 20);
+        menuTools.Size = new Size(69, 29);
         menuTools.Text = "&Tools";
         // 
         // menuToolsPowershell
@@ -669,7 +688,7 @@ partial class MainForm
         menuToolsPowershell.BackColor = Color.FromArgb(56, 56, 56);
         menuToolsPowershell.ForeColor = Color.FromArgb(218, 218, 218);
         menuToolsPowershell.Name = "menuToolsPowershell";
-        menuToolsPowershell.Size = new Size(222, 22);
+        menuToolsPowershell.Size = new Size(341, 34);
         menuToolsPowershell.Text = "⚡ &PowerShell";
         menuToolsPowershell.ToolTipText = "Open PowerShell in the current project folder";
         // 
@@ -678,7 +697,7 @@ partial class MainForm
         menuToolsExplorer.BackColor = Color.FromArgb(56, 56, 56);
         menuToolsExplorer.ForeColor = Color.FromArgb(218, 218, 218);
         menuToolsExplorer.Name = "menuToolsExplorer";
-        menuToolsExplorer.Size = new Size(222, 22);
+        menuToolsExplorer.Size = new Size(341, 34);
         menuToolsExplorer.Text = "📂 File &Explorer";
         menuToolsExplorer.ToolTipText = "Open File Explorer in the current session folder";
         // 
@@ -687,7 +706,7 @@ partial class MainForm
         menuToolsVSCode.BackColor = Color.FromArgb(56, 56, 56);
         menuToolsVSCode.ForeColor = Color.FromArgb(218, 218, 218);
         menuToolsVSCode.Name = "menuToolsVSCode";
-        menuToolsVSCode.Size = new Size(222, 22);
+        menuToolsVSCode.Size = new Size(341, 34);
         menuToolsVSCode.Text = "💻 &VS Code";
         menuToolsVSCode.ToolTipText = "Open VS Code in the session folder. (Live IDE pairing is not available through the Copilot SDK.)";
         // 
@@ -696,14 +715,14 @@ partial class MainForm
         menuToolsSeparator1.BackColor = Color.FromArgb(56, 56, 56);
         menuToolsSeparator1.ForeColor = Color.FromArgb(218, 218, 218);
         menuToolsSeparator1.Name = "menuToolsSeparator1";
-        menuToolsSeparator1.Size = new Size(219, 6);
+        menuToolsSeparator1.Size = new Size(338, 6);
         // 
         // menuToolsSkillTree
         // 
         menuToolsSkillTree.BackColor = Color.FromArgb(56, 56, 56);
         menuToolsSkillTree.ForeColor = Color.FromArgb(218, 218, 218);
         menuToolsSkillTree.Name = "menuToolsSkillTree";
-        menuToolsSkillTree.Size = new Size(222, 22);
+        menuToolsSkillTree.Size = new Size(341, 34);
         menuToolsSkillTree.Text = "🌳 Skill &Tree...";
         menuToolsSkillTree.ToolTipText = "Edit the Skill Tree (folders contributing skills/ and agents/ to the session)";
         // 
@@ -712,7 +731,7 @@ partial class MainForm
         menuToolsSkillSources.BackColor = Color.FromArgb(56, 56, 56);
         menuToolsSkillSources.ForeColor = Color.FromArgb(218, 218, 218);
         menuToolsSkillSources.Name = "menuToolsSkillSources";
-        menuToolsSkillSources.Size = new Size(222, 22);
+        menuToolsSkillSources.Size = new Size(341, 34);
         menuToolsSkillSources.Text = "🌐 Skill &Sources...";
         menuToolsSkillSources.ToolTipText = "Edit the list of remote URLs scanned by Browse Skill Catalog";
         // 
@@ -721,7 +740,7 @@ partial class MainForm
         menuToolsBrowseCatalog.BackColor = Color.FromArgb(56, 56, 56);
         menuToolsBrowseCatalog.ForeColor = Color.FromArgb(218, 218, 218);
         menuToolsBrowseCatalog.Name = "menuToolsBrowseCatalog";
-        menuToolsBrowseCatalog.Size = new Size(222, 22);
+        menuToolsBrowseCatalog.Size = new Size(341, 34);
         menuToolsBrowseCatalog.Text = "📥 Browse Skill &Catalog...";
         menuToolsBrowseCatalog.ToolTipText = "Browse and download skills, agents, prompts, and instructions from the configured Skill Sources";
         // 
@@ -730,14 +749,14 @@ partial class MainForm
         menuToolsSeparator2.BackColor = Color.FromArgb(56, 56, 56);
         menuToolsSeparator2.ForeColor = Color.FromArgb(218, 218, 218);
         menuToolsSeparator2.Name = "menuToolsSeparator2";
-        menuToolsSeparator2.Size = new Size(219, 6);
+        menuToolsSeparator2.Size = new Size(338, 6);
         // 
         // menuToolsPermissions
         // 
         menuToolsPermissions.BackColor = Color.FromArgb(56, 56, 56);
         menuToolsPermissions.ForeColor = Color.FromArgb(218, 218, 218);
         menuToolsPermissions.Name = "menuToolsPermissions";
-        menuToolsPermissions.Size = new Size(222, 22);
+        menuToolsPermissions.Size = new Size(341, 34);
         menuToolsPermissions.Text = "🔐 Workspace &Permissions...";
         menuToolsPermissions.ToolTipText = "View and edit trusted folders and pre-approved tool operations stored in ~/.copilot/permissions-config.json";
         // 
@@ -746,7 +765,7 @@ partial class MainForm
         menuHelp.DropDownItems.AddRange(new ToolStripItem[] { menuHelpShow, menuHelpAbout });
         menuHelp.ForeColor = Color.FromArgb(218, 218, 218);
         menuHelp.Name = "menuHelp";
-        menuHelp.Size = new Size(44, 20);
+        menuHelp.Size = new Size(65, 29);
         menuHelp.Text = "&Help";
         // 
         // menuHelpShow
@@ -754,7 +773,7 @@ partial class MainForm
         menuHelpShow.BackColor = Color.FromArgb(56, 56, 56);
         menuHelpShow.ForeColor = Color.FromArgb(218, 218, 218);
         menuHelpShow.Name = "menuHelpShow";
-        menuHelpShow.Size = new Size(149, 22);
+        menuHelpShow.Size = new Size(230, 34);
         menuHelpShow.Text = "❓ Show &Help";
         menuHelpShow.ToolTipText = "Ask Copilot for a capabilities and tools overview";
         // 
@@ -763,7 +782,7 @@ partial class MainForm
         menuHelpAbout.BackColor = Color.FromArgb(56, 56, 56);
         menuHelpAbout.ForeColor = Color.FromArgb(218, 218, 218);
         menuHelpAbout.Name = "menuHelpAbout";
-        menuHelpAbout.Size = new Size(149, 22);
+        menuHelpAbout.Size = new Size(230, 34);
         menuHelpAbout.Text = "&About GoPilot";
         menuHelpAbout.ToolTipText = "Show version and credits";
         // 
@@ -772,16 +791,17 @@ partial class MainForm
         statusStrip.BackColor = Color.FromArgb(56, 56, 56);
         statusStrip.ImageScalingSize = new Size(20, 20);
         statusStrip.Items.AddRange(new ToolStripItem[] { toolStripStatusLabelConnection, toolStripStatusLabelVersion, toolStripStatusLabelSep, toolStripStatusLabelAgentStatus, toolStripProgressBarContext, toolStripStatusLabelContext, toolStripStatusLabelSession });
-        statusStrip.Location = new Point(0, 594);
+        statusStrip.Location = new Point(0, 994);
         statusStrip.Name = "statusStrip";
-        statusStrip.Size = new Size(940, 23);
+        statusStrip.Padding = new Padding(1, 0, 20, 0);
+        statusStrip.Size = new Size(1343, 34);
         statusStrip.TabIndex = 1;
         // 
         // toolStripStatusLabelConnection
         // 
         toolStripStatusLabelConnection.ForeColor = Color.FromArgb(218, 218, 218);
         toolStripStatusLabelConnection.Name = "toolStripStatusLabelConnection";
-        toolStripStatusLabelConnection.Size = new Size(86, 18);
+        toolStripStatusLabelConnection.Size = new Size(129, 27);
         toolStripStatusLabelConnection.Text = "Not connected";
         // 
         // toolStripStatusLabelVersion
@@ -789,19 +809,19 @@ partial class MainForm
         toolStripStatusLabelVersion.ForeColor = Color.FromArgb(148, 148, 148);
         toolStripStatusLabelVersion.Name = "toolStripStatusLabelVersion";
         toolStripStatusLabelVersion.Padding = new Padding(6, 0, 0, 0);
-        toolStripStatusLabelVersion.Size = new Size(6, 18);
+        toolStripStatusLabelVersion.Size = new Size(6, 27);
         // 
         // toolStripStatusLabelSep
         // 
         toolStripStatusLabelSep.ForeColor = Color.FromArgb(148, 148, 148);
         toolStripStatusLabelSep.Name = "toolStripStatusLabelSep";
-        toolStripStatusLabelSep.Size = new Size(6, 23);
+        toolStripStatusLabelSep.Size = new Size(6, 34);
         // 
         // toolStripStatusLabelAgentStatus
         // 
         toolStripStatusLabelAgentStatus.ForeColor = Color.FromArgb(200, 200, 200);
         toolStripStatusLabelAgentStatus.Name = "toolStripStatusLabelAgentStatus";
-        toolStripStatusLabelAgentStatus.Size = new Size(727, 18);
+        toolStripStatusLabelAgentStatus.Size = new Size(1047, 27);
         toolStripStatusLabelAgentStatus.Spring = true;
         toolStripStatusLabelAgentStatus.Text = "Ready for next command";
         // 
@@ -811,7 +831,7 @@ partial class MainForm
         toolStripProgressBarContext.ForeColor = Color.FromArgb(148, 220, 148);
         toolStripProgressBarContext.Margin = new Padding(4, 3, 0, 3);
         toolStripProgressBarContext.Name = "toolStripProgressBarContext";
-        toolStripProgressBarContext.Size = new Size(80, 17);
+        toolStripProgressBarContext.Size = new Size(114, 28);
         toolStripProgressBarContext.Style = ProgressBarStyle.Continuous;
         // 
         // toolStripStatusLabelContext
@@ -819,28 +839,29 @@ partial class MainForm
         toolStripStatusLabelContext.ForeColor = Color.FromArgb(148, 148, 148);
         toolStripStatusLabelContext.Name = "toolStripStatusLabelContext";
         toolStripStatusLabelContext.Padding = new Padding(8, 0, 8, 0);
-        toolStripStatusLabelContext.Size = new Size(16, 18);
+        toolStripStatusLabelContext.Size = new Size(16, 27);
         // 
         // toolStripStatusLabelSession
         // 
         toolStripStatusLabelSession.ForeColor = Color.FromArgb(148, 148, 148);
         toolStripStatusLabelSession.Name = "toolStripStatusLabelSession";
-        toolStripStatusLabelSession.Size = new Size(0, 18);
+        toolStripStatusLabelSession.Size = new Size(0, 27);
         toolStripStatusLabelSession.TextAlign = ContentAlignment.MiddleRight;
         // 
         // MainForm
         // 
-        AutoScaleDimensions = new SizeF(7F, 15F);
+        AutoScaleDimensions = new SizeF(10F, 25F);
         AutoScaleMode = AutoScaleMode.Font;
         BackColor = Color.FromArgb(64, 64, 64);
-        ClientSize = new Size(940, 617);
+        ClientSize = new Size(1343, 1028);
         Controls.Add(splitContainerMain);
         Controls.Add(statusStrip);
         Controls.Add(menuStripMain);
         Font = new Font("Segoe UI", 9F);
         Icon = (Icon)resources.GetObject("$this.Icon");
         MainMenuStrip = menuStripMain;
-        MinimumSize = new Size(956, 581);
+        Margin = new Padding(4, 5, 4, 5);
+        MinimumSize = new Size(1356, 931);
         Name = "MainForm";
         Text = "GoPilot";
         splitContainerMain.Panel1.ResumeLayout(false);

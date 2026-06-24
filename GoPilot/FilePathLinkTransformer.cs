@@ -218,6 +218,14 @@ internal static class FilePathLinkTransformer
 			if (string.IsNullOrEmpty(workspaceRoot)) return null;
 			var rel = fwd.StartsWith(@".\") ? fwd.Substring(2) : fwd;
 			candidate = Path.Combine(workspaceRoot, rel);
+
+			// Fallback: a bare filename (no directory part) that does not
+			// resolve at the workspace root is searched for across the
+			// workspace subtree. Only a single unambiguous match is linked;
+			// zero or multiple matches stay plain text so we never point the
+			// user at the wrong file.
+			if (rel.IndexOf('\\') < 0 && !ExistingFile(candidate))
+				return ResolveByFilenameSearch(rel, workspaceRoot);
 		}
 
 		try
@@ -229,6 +237,122 @@ internal static class FilePathLinkTransformer
 		{
 			return null;
 		}
+	}
+
+	// -- Bare-filename fallback search --------------------------------------------
+	//
+	// When the model emits a lone filename (no directory part) that does not
+	// exist directly at the workspace root, look it up in a cached index of
+	// every file under the workspace. The index is rebuilt lazily whenever the
+	// workspace root changes or the cached copy is older than IndexTtl, so it
+	// keeps up with files created mid-session without rescanning on every
+	// render. Large, rarely-referenced directories (.git, node_modules, build
+	// outputs, ...) are skipped, and the walk stops after MaxIndexedFiles
+	// entries so a pathological tree can never stall the UI.
+
+	private static readonly object IndexLock = new();
+	private static string? _indexRoot;
+	private static DateTime _indexBuiltUtc;
+	private static Dictionary<string, List<string>>? _filenameIndex;
+
+	private static readonly TimeSpan IndexTtl = TimeSpan.FromSeconds(30);
+	private const int MaxIndexedFiles = 50000;
+
+	private static readonly HashSet<string> SkipDirectories = new(StringComparer.OrdinalIgnoreCase)
+	{
+		".git", ".svn", ".hg", ".vs", ".idea", ".vscode",
+		"node_modules", "bin", "obj", "dist", "build", "out",
+		"packages", "target", ".gradle", ".next", "__pycache__",
+	};
+
+	private static bool ExistingFile(string candidate)
+	{
+		try { return File.Exists(candidate); }
+		catch { return false; }
+	}
+
+	/// <summary>
+	/// Resolves a bare filename to a single existing path beneath
+	/// <paramref name="workspaceRoot"/> using the cached filename index.
+	/// Returns null when the name is unknown OR matches more than one file --
+	/// ambiguous references are deliberately left unlinked so the user is
+	/// never sent to the wrong file.
+	/// </summary>
+	private static string? ResolveByFilenameSearch(string filename, string workspaceRoot)
+	{
+		var index = GetFilenameIndex(workspaceRoot);
+		if (index == null) return null;
+
+		if (!index.TryGetValue(filename, out var matches) || matches.Count != 1)
+			return null;
+
+		var only = matches[0];
+		return File.Exists(only) ? only : null;
+	}
+
+	private static Dictionary<string, List<string>>? GetFilenameIndex(string workspaceRoot)
+	{
+		string fullRoot;
+		try { fullRoot = Path.GetFullPath(workspaceRoot); }
+		catch { return null; }
+
+		if (!Directory.Exists(fullRoot)) return null;
+
+		lock (IndexLock)
+		{
+			var fresh = _filenameIndex != null
+				&& string.Equals(_indexRoot, fullRoot, StringComparison.OrdinalIgnoreCase)
+				&& (DateTime.UtcNow - _indexBuiltUtc) < IndexTtl;
+			if (fresh) return _filenameIndex;
+
+			var index = BuildFilenameIndex(fullRoot);
+			_filenameIndex = index;
+			_indexRoot = fullRoot;
+			_indexBuiltUtc = DateTime.UtcNow;
+			return index;
+		}
+	}
+
+	private static Dictionary<string, List<string>> BuildFilenameIndex(string root)
+	{
+		var index = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+		var pending = new Stack<string>();
+		pending.Push(root);
+		int count = 0;
+
+		while (pending.Count > 0 && count < MaxIndexedFiles)
+		{
+			var dir = pending.Pop();
+
+			string[] files;
+			try { files = Directory.GetFiles(dir); }
+			catch { continue; }
+
+			foreach (var file in files)
+			{
+				var name = Path.GetFileName(file);
+				if (!index.TryGetValue(name, out var list))
+				{
+					list = new List<string>(1);
+					index[name] = list;
+				}
+				list.Add(file);
+				if (++count >= MaxIndexedFiles) break;
+			}
+
+			string[] subDirs;
+			try { subDirs = Directory.GetDirectories(dir); }
+			catch { continue; }
+
+			foreach (var sub in subDirs)
+			{
+				var leaf = Path.GetFileName(sub);
+				if (SkipDirectories.Contains(leaf)) continue;
+				pending.Push(sub);
+			}
+		}
+
+		return index;
 	}
 
 	private static bool HasSeparator(string reference) =>

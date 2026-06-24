@@ -1220,6 +1220,21 @@ public sealed class CopilotService : IAsyncDisposable
             "(e.g., Set-Content, Add-Content, Get-Content, Get-ChildItem, Select-String). " +
             "Do not retry the same built-in tool that failed.");
 
+        // File-reference directive -- always present. Keeps the WebView2 file-link
+        // rewriter (FilePathLinkTransformer) reliable: it can only turn a path into
+        // a clickable link when the path resolves on disk, and a lone filename in a
+        // subfolder does not.
+        var rootHint = string.IsNullOrEmpty(WorkingDirectory)
+            ? ""
+            : $" (project root \"{WorkingDirectory}\")";
+        parts.Add(
+            "FILE REFERENCES: When you mention any file in the project workspace" + rootHint + ", " +
+            "always write its COMPLETE reference -- either a workspace-relative path from the " +
+            "project root (e.g. \"GoPilot/CavemanTransformer.cs\") or a full absolute path. " +
+            "Never refer to a workspace file by its bare filename alone, because the app turns " +
+            "complete paths into clickable links but cannot reliably resolve a lone filename " +
+            "located in a subfolder. Preserve any trailing line/column suffix (e.g. \":42\").");
+
         // Tiered instructions: Personal -> Skill Tree[*] -> Project
         var loadedTiers = new List<string>();
         foreach (var (label, folder) in GetTierFolders())
@@ -1272,7 +1287,8 @@ public sealed class CopilotService : IAsyncDisposable
                 "Speak primitive. Use nouns and verbs. No grammar filler (the, is, are, of). " +
                 "Keep words short. Save tokens. Be blunt. " +
                 "Skip openers. Skip closures. Skip preambles. Skip filler transitions. " +
-                "Apply this to all prose responses; preserve code, file paths, command syntax, " +
+                "Apply this to ALL prose output, including your reasoning/thinking output, not just " +
+                "the final response; preserve code, file paths, command syntax, " +
                 "and tool output verbatim.");
         }
 
