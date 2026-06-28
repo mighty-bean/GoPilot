@@ -18,7 +18,7 @@ public partial class MainForm : Form
     private static void WithoutRedraw(RichTextBox rtb, Action action)
     {
         SendMessage(rtb.Handle, WM_SETREDRAW, false, 0);
-        try   { action(); }
+        try { action(); }
         finally
         {
             SendMessage(rtb.Handle, WM_SETREDRAW, true, 0);
@@ -26,7 +26,7 @@ public partial class MainForm : Form
         }
     }
     private readonly CopilotService _copilot = new();
-    private readonly PromptHistory  _promptHistory = new();
+    private readonly PromptHistory _promptHistory = new();
     private readonly List<string> _attachments = new();
     private readonly HashSet<string> _streamingSessions = new();
     // Structured output blocks feeding the WebView2 Rendered tab
@@ -98,11 +98,11 @@ public partial class MainForm : Form
     // closes them with a smart summary. Keyed by SessionId so main and sub-agent
     // sessions never bleed into each other's groups.
     private readonly Dictionary<string, OpenReasoningSection> _openReasoningSections = new();
-    private readonly Dictionary<string, OpenToolSection>      _openToolSections      = new();
+    private readonly Dictionary<string, OpenToolSection> _openToolSections = new();
     // Maps tool-call id -> tracking metadata for ToolProgress / ToolComplete routing.
     // Lines stay registered here even after completion until the parent section closes,
     // so smart-summary categorisation has access to all the line metadata.
-    private readonly Dictionary<string, OpenToolLine>         _openToolLines         = new();
+    private readonly Dictionary<string, OpenToolLine> _openToolLines = new();
     private int _nextSectionId = 0;
     // Active "Thinking..." pill id for the current main-session turn, if any.
     // Set immediately after Send; cleared on the first session message of the turn.
@@ -124,7 +124,7 @@ public partial class MainForm : Form
         // Load persisted settings and sync with service
         _settings = GoPilotSettings.Load();
         _copilot.SkillTreeFolders = _settings.SkillTreeFolders;
-        _copilot.CavemanMode      = _settings.CavemanMode;
+        _copilot.CavemanMode = _settings.CavemanMode;
         menuSessionCaveman.Checked = _settings.CavemanMode;
         menuSessionShowSteps.Checked = _settings.DetailsDefaultOpen;
         // Restore the last-used Auto-approve / Fleet toggles before the mode
@@ -134,7 +134,7 @@ public partial class MainForm : Form
         // _copilot.AutoApprove, and Fleet's ScheduleHandoff guard requires a
         // live connection. Both are persisted again once _uiReady flips on.
         menuOptionAutoApprove.Checked = _settings.LastAutoApprove;
-        menuOptionFleet.Checked       = _settings.LastFleet;
+        menuOptionFleet.Checked = _settings.LastFleet;
         // Stash the persisted effort for one-shot consumption by the first
         // RefreshEffortCombo call (triggered from PopulateModelsAsync via the
         // model combo's SelectedIndexChanged handler).
@@ -148,7 +148,7 @@ public partial class MainForm : Form
         PopulateModeCombo();
         // Sync service with the UI defaults set above
         _copilot.AutoApprove = menuOptionAutoApprove.Checked;
-        _copilot.FleetMode   = menuOptionFleet.Checked;
+        _copilot.FleetMode = menuOptionFleet.Checked;
 
         // A3: seed the meter with a visible "starting state" so the affordance
         // is discoverable before the first AssistantUsageEvent arrives.
@@ -164,7 +164,7 @@ public partial class MainForm : Form
         Load += (_, _) =>
         {
             statusStrip.SizingGrip = false;
-            statusStrip.Padding    = Padding.Empty;
+            statusStrip.Padding = Padding.Empty;
             foreach (ToolStripItem item in statusStrip.Items)
                 item.Margin = new Padding(item.Margin.Left, 1, item.Margin.Right, 1);
         };
@@ -186,7 +186,7 @@ public partial class MainForm : Form
         {
             foreach (var path in paths)
                 AddAttachment(path);
-		};
+        };
         richTextBoxPrompt.UnrecognizedFormatDropped += (_, formats) =>
         {
             // The drop was accepted on the strength of a recognised format
@@ -378,10 +378,10 @@ public partial class MainForm : Form
             // surface, not a general-purpose browser. Disable navigation
             // affordances the user could accidentally trigger.
             var settings = webViewOutput.CoreWebView2.Settings;
-            settings.AreDefaultContextMenusEnabled   = false;
+            settings.AreDefaultContextMenusEnabled = false;
             settings.AreBrowserAcceleratorKeysEnabled = false;
-            settings.IsStatusBarEnabled              = false;
-            settings.AreDevToolsEnabled              = false;
+            settings.IsStatusBarEnabled = false;
+            settings.AreDevToolsEnabled = false;
 
             // The Rendered tab posts JSON messages (e.g. file-path link
             // clicks) back to us via window.chrome.webview.postMessage.
@@ -393,10 +393,10 @@ public partial class MainForm : Form
             // assignments) and popup window requests (target="_blank", window.open).
             // Any web URL is routed to the system default browser so the
             // Rendered tab never replaces the transcript with a remote page.
-            webViewOutput.CoreWebView2.NavigationStarting       += WebView_NavigationStarting;
-            webViewOutput.CoreWebView2.FrameNavigationStarting  += WebView_FrameNavigationStarting;
-            webViewOutput.CoreWebView2.NewWindowRequested        += WebView_NewWindowRequested;
-            webViewOutput.CoreWebView2.NavigationCompleted       += WebView_NavigationCompleted;
+            webViewOutput.CoreWebView2.NavigationStarting += WebView_NavigationStarting;
+            webViewOutput.CoreWebView2.FrameNavigationStarting += WebView_FrameNavigationStarting;
+            webViewOutput.CoreWebView2.NewWindowRequested += WebView_NewWindowRequested;
+            webViewOutput.CoreWebView2.NavigationCompleted += WebView_NavigationCompleted;
 
             // Navigate to the bundled output.html
             var htmlPath = Path.Combine(AppContext.BaseDirectory, "web", "output.html");
@@ -464,7 +464,7 @@ public partial class MainForm : Form
 
         switch (type)
         {
-            case "openPath":   OpenFilePathFromLink(path);   break;
+            case "openPath": OpenFilePathFromLink(path); break;
             case "revealPath": RevealFilePathFromLink(path); break;
         }
     }
@@ -594,8 +594,8 @@ public partial class MainForm : Form
     {
         if (string.IsNullOrWhiteSpace(url)) return;
 
-        if (!url.StartsWith("http:",   StringComparison.OrdinalIgnoreCase)
-         && !url.StartsWith("https:",  StringComparison.OrdinalIgnoreCase)
+        if (!url.StartsWith("http:", StringComparison.OrdinalIgnoreCase)
+         && !url.StartsWith("https:", StringComparison.OrdinalIgnoreCase)
          && !url.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase))
         {
             return;
@@ -605,7 +605,7 @@ public partial class MainForm : Form
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
-                FileName        = url,
+                FileName = url,
                 UseShellExecute = true,
             });
         }
@@ -688,7 +688,7 @@ public partial class MainForm : Form
         // content area is also covered for both selected and unselected tabs.
         var fillRect = bounds;
         fillRect.Inflate(3, 3);
-        fillRect.Y      -= 2;   // extend upward to cover the top-edge border
+        fillRect.Y -= 2;   // extend upward to cover the top-edge border
         fillRect.Height += 6;   // extend downward to cover the tab-to-content seam
         e.Graphics!.SetClip(fillRect);
         e.Graphics.FillRectangle(bgBrush, fillRect);
@@ -715,12 +715,12 @@ public partial class MainForm : Form
     {
         if (!_uiReady) return;
 
-        _settings.LastModel       = comboBoxModel.SelectedItem?.ToString() ?? string.Empty;
-        _settings.LastMode        = comboBoxMode.SelectedItem?.ToString() ?? string.Empty;
-        _settings.LastEffort      = comboBoxEffort.Enabled
+        _settings.LastModel = comboBoxModel.SelectedItem?.ToString() ?? string.Empty;
+        _settings.LastMode = comboBoxMode.SelectedItem?.ToString() ?? string.Empty;
+        _settings.LastEffort = comboBoxEffort.Enabled
             ? (comboBoxEffort.SelectedItem?.ToString() ?? string.Empty)
             : string.Empty;
-        _settings.LastFleet       = menuOptionFleet.Checked;
+        _settings.LastFleet = menuOptionFleet.Checked;
         _settings.LastAutoApprove = menuOptionAutoApprove.Checked;
 
         try { _settings.Save(); } catch { /* best-effort persist */ }
@@ -800,8 +800,8 @@ public partial class MainForm : Form
         new()
         {
             [SessionMode.Interactive] = "Standard",
-            [SessionMode.Plan]        = "Plan",
-            [SessionMode.Autopilot]   = "Autopilot",
+            [SessionMode.Plan] = "Plan",
+            [SessionMode.Autopilot] = "Autopilot",
         };
 
     // Ordered list of all known SessionMode values (replaces Enum.GetValues since
@@ -1153,9 +1153,9 @@ public partial class MainForm : Form
         IReadOnlyList<string>? extraAttachments = null,
         (int OriginalChars, int CavemanChars)? cavemanStats = null)
     {
-        _copilot.ActiveMode  = comboBoxMode.SelectedItem?.ToString()  ?? "Standard";
+        _copilot.ActiveMode = comboBoxMode.SelectedItem?.ToString() ?? "Standard";
         _copilot.AutoApprove = menuOptionAutoApprove.Checked;
-        _copilot.FleetMode   = menuOptionFleet.Checked;
+        _copilot.FleetMode = menuOptionFleet.Checked;
 
         // If a UI option change scheduled a deferred handoff, run it now BEFORE
         // the user's prompt so context survives mode/fleet switches automatically.
@@ -1220,7 +1220,7 @@ public partial class MainForm : Form
                 // paths naturally skip this.
                 if (cavemanStats is { } stats && stats.OriginalChars > 0)
                 {
-                    var saved   = stats.OriginalChars - stats.CavemanChars;
+                    var saved = stats.OriginalChars - stats.CavemanChars;
                     var percent = (int)Math.Round(100.0 * saved / stats.OriginalChars);
                     AppendOutput(
                         $"\U0001f9b4 Caveman: {stats.OriginalChars} -> {stats.CavemanChars} chars ({percent:+0;-0;0}%, saved {saved})\r\n\r\n",
@@ -1463,8 +1463,8 @@ public partial class MainForm : Form
     private void OnContextUsageChanged(ContextUsageEventArgs args)
     {
         var input = args.InputTokens;
-        var max   = args.MaxPromptTokens;
-        var pct   = args.Percent;
+        var max = args.MaxPromptTokens;
+        var pct = args.Percent;
 
         string text;
         Color color;
@@ -1473,31 +1473,31 @@ public partial class MainForm : Form
 
         if (max <= 0)
         {
-            text     = "Prompt: \u2014 / \u2014 (\u2014)";
-            color    = Color.FromArgb(148, 148, 148);
+            text = "Prompt: \u2014 / \u2014 (\u2014)";
+            color = Color.FromArgb(148, 148, 148);
             barValue = 0;
             barColor = Color.FromArgb(96, 96, 96);
         }
         else if (input <= 0)
         {
-            text     = $"Prompt: 0 / {FormatTokens(max)} (0%)";
-            color    = Color.FromArgb(148, 220, 148); // green
+            text = $"Prompt: 0 / {FormatTokens(max)} (0%)";
+            color = Color.FromArgb(148, 220, 148); // green
             barValue = 0;
             barColor = Color.FromArgb(148, 220, 148);
         }
         else
         {
             text = $"Prompt: {FormatTokens(input)} / {FormatTokens(max)} ({pct:0}%)";
-            color = pct < 60  ? Color.FromArgb(148, 220, 148)  // green
-                  : pct < 85  ? Color.FromArgb(232, 200, 110)  // amber
+            color = pct < 60 ? Color.FromArgb(148, 220, 148)  // green
+                  : pct < 85 ? Color.FromArgb(232, 200, 110)  // amber
                               : Color.FromArgb(240, 120, 120); // red
             barColor = color;
             barValue = (int)Math.Clamp(Math.Round(pct), 0, 100);
         }
 
-        toolStripStatusLabelContext.Text      = text;
+        toolStripStatusLabelContext.Text = text;
         toolStripStatusLabelContext.ForeColor = color;
-        toolStripProgressBarContext.Value     = barValue;
+        toolStripProgressBarContext.Value = barValue;
         toolStripProgressBarContext.ForeColor = barColor;
         toolTipMain.SetToolTip(statusStrip,
             max > 0
@@ -1524,7 +1524,7 @@ public partial class MainForm : Form
     private static string FormatTokens(double tokens)
     {
         if (tokens >= 1_000_000) return $"{tokens / 1_000_000:0.#}M";
-        if (tokens >= 1_000)     return $"{tokens / 1_000:0.#}K";
+        if (tokens >= 1_000) return $"{tokens / 1_000:0.#}K";
         return ((int)tokens).ToString();
     }
 
@@ -1539,17 +1539,17 @@ public partial class MainForm : Form
         if (pct >= 85)
         {
             glyph = "\ud83d\udd25"; // fire
-            tip   = $"Prompt window at {pct:0}% \u2014 strongly recommend Compact or Restart now.";
+            tip = $"Prompt window at {pct:0}% \u2014 strongly recommend Compact or Restart now.";
         }
         else if (pct >= 60)
         {
             glyph = "\u26a0\ufe0f"; // warning sign
-            tip   = $"Prompt window at {pct:0}% \u2014 consider Compact or Restart soon.";
+            tip = $"Prompt window at {pct:0}% \u2014 consider Compact or Restart soon.";
         }
         else
         {
             glyph = "\ud83d\udca4"; // zzz (idle)
-            tip   = "Free up context window \u2014 Compact (in place) or Restart with summary";
+            tip = "Free up context window \u2014 Compact (in place) or Restart with summary";
         }
 
         var newText = $"{glyph} Refresh";
@@ -1583,7 +1583,7 @@ public partial class MainForm : Form
             case DialogResult.No:
                 _ = RunRestartWithSummaryAsync();
                 break;
-            // Cancel: stay silent for the rest of the session.
+                // Cancel: stay silent for the rest of the session.
         }
     }
 
@@ -1636,13 +1636,13 @@ public partial class MainForm : Form
             if (_copilot.IsConnected)
                 await _copilot.ResetSessionAsync();
 
-            _mainSessionId   = null;
+            _mainSessionId = null;
             ResetSessionTrackingState();
 
             // Sync UI state to service before session creation so the system message is correct
-            _copilot.ActiveMode  = comboBoxMode.SelectedItem?.ToString() ?? "Standard";
+            _copilot.ActiveMode = comboBoxMode.SelectedItem?.ToString() ?? "Standard";
             _copilot.AutoApprove = menuOptionAutoApprove.Checked;
-            _copilot.FleetMode   = menuOptionFleet.Checked;
+            _copilot.FleetMode = menuOptionFleet.Checked;
 
             await _copilot.EnsureSessionAsync();
 
@@ -1800,7 +1800,7 @@ public partial class MainForm : Form
             var dreamPath = Path.Combine(dreamsDir, $"dream-{DateTime.Now:yyyy-MM-dd-HHmmss}.md");
 
             var model = comboBoxModel.SelectedItem?.ToString() ?? string.Empty;
-            var mode  = comboBoxMode.SelectedItem?.ToString()  ?? string.Empty;
+            var mode = comboBoxMode.SelectedItem?.ToString() ?? string.Empty;
             var metadata =
                 $"\r\n<!-- gopilot-model: {model} -->\r\n" +
                 $"<!-- gopilot-mode: {mode} -->\r\n" +
@@ -1836,7 +1836,7 @@ public partial class MainForm : Form
             try
             {
                 await _copilot.ResetSessionAsync();
-                _mainSessionId   = null;
+                _mainSessionId = null;
                 ResetSessionTrackingState();
             }
             catch { /* best-effort */ }
@@ -1971,9 +1971,9 @@ public partial class MainForm : Form
         try
         {
             // Sync UI state to service before session creation so the system message is correct
-            _copilot.ActiveMode  = comboBoxMode.SelectedItem?.ToString() ?? "Standard";
+            _copilot.ActiveMode = comboBoxMode.SelectedItem?.ToString() ?? "Standard";
             _copilot.AutoApprove = menuOptionAutoApprove.Checked;
-            _copilot.FleetMode   = menuOptionFleet.Checked;
+            _copilot.FleetMode = menuOptionFleet.Checked;
 
             await _copilot.EnsureSessionAsync();
             var version = await _copilot.GetVersionAsync();
@@ -1989,17 +1989,17 @@ public partial class MainForm : Form
             foreach (var (label, folder) in _copilot.GetTierFolders())
             {
                 var instructionsPath = System.IO.Path.Combine(folder, "gopilot-instructions.md");
-                var agentsDir        = System.IO.Path.Combine(folder, "agents");
-                var skillsDir        = System.IO.Path.Combine(folder, "skills");
+                var agentsDir = System.IO.Path.Combine(folder, "agents");
+                var skillsDir = System.IO.Path.Combine(folder, "skills");
 
-                var hasMd     = System.IO.File.Exists(instructionsPath);
+                var hasMd = System.IO.File.Exists(instructionsPath);
                 var agentCount = System.IO.Directory.Exists(agentsDir)
                     ? System.IO.Directory.GetFiles(agentsDir, "*.md", System.IO.SearchOption.TopDirectoryOnly).Length
                     : 0;
                 var hasSkills = System.IO.Directory.Exists(skillsDir);
 
                 var parts = new System.Text.StringBuilder();
-                if (hasMd)     parts.Append("instructions");
+                if (hasMd) parts.Append("instructions");
                 if (agentCount > 0)
                 {
                     if (parts.Length > 0) parts.Append(", ");
@@ -2055,16 +2055,16 @@ public partial class MainForm : Form
 
         _sessionStore.Save(new SessionMetadataEntry
         {
-            SessionId       = sessionId,
+            SessionId = sessionId,
             WorkspaceFolder = workspace,
-            Model           = comboBoxModel.SelectedItem?.ToString() ?? "",
-            Mode            = comboBoxMode.SelectedItem?.ToString()  ?? "Standard",
-            Fleet           = menuOptionFleet.Checked,
-            AutoApprove     = menuOptionAutoApprove.Checked,
-            CreatedAt       = existing?.CreatedAt is { } prior && prior != default
+            Model = comboBoxModel.SelectedItem?.ToString() ?? "",
+            Mode = comboBoxMode.SelectedItem?.ToString() ?? "Standard",
+            Fleet = menuOptionFleet.Checked,
+            AutoApprove = menuOptionAutoApprove.Checked,
+            CreatedAt = existing?.CreatedAt is { } prior && prior != default
                 ? prior
                 : DateTime.Now,
-            Description     = existing?.Description ?? "",
+            Description = existing?.Description ?? "",
         });
     }
 
@@ -2086,14 +2086,14 @@ public partial class MainForm : Form
         {
             existing = new SessionMetadataEntry
             {
-                SessionId       = sessionId,
+                SessionId = sessionId,
                 WorkspaceFolder = _copilot.WorkingDirectory ?? "",
-                Model           = comboBoxModel.SelectedItem?.ToString() ?? "",
-                Mode            = comboBoxMode.SelectedItem?.ToString()  ?? "Standard",
-                Fleet           = menuOptionFleet.Checked,
-                AutoApprove     = menuOptionAutoApprove.Checked,
-                CreatedAt       = DateTime.Now,
-                Description     = "",
+                Model = comboBoxModel.SelectedItem?.ToString() ?? "",
+                Mode = comboBoxMode.SelectedItem?.ToString() ?? "Standard",
+                Fleet = menuOptionFleet.Checked,
+                AutoApprove = menuOptionAutoApprove.Checked,
+                CreatedAt = DateTime.Now,
+                Description = "",
             };
         }
         else if (!string.IsNullOrWhiteSpace(existing.Description))
@@ -2140,11 +2140,11 @@ public partial class MainForm : Form
             {
                 SessionId = id,
                 Workspace = meta?.WorkspaceFolder ?? "",
-                Model     = meta?.Model ?? "",
-                Mode      = meta?.Mode ?? "",
+                Model = meta?.Model ?? "",
+                Mode = meta?.Mode ?? "",
                 CreatedAt = meta?.CreatedAt ?? default,
                 Description = meta?.Description ?? "",
-                Metadata  = meta,
+                Metadata = meta,
             });
         }
 
@@ -2278,7 +2278,7 @@ public partial class MainForm : Form
                 }
 
                 // Restore fleet and auto-approve
-                menuOptionFleet.Checked       = metadata.Fleet;
+                menuOptionFleet.Checked = metadata.Fleet;
                 menuOptionAutoApprove.Checked = metadata.AutoApprove;
             }
 
@@ -2299,9 +2299,9 @@ public partial class MainForm : Form
             UpdateTitleBar(workspace);
 
             // Sync UI state to service
-            _copilot.ActiveMode  = comboBoxMode.SelectedItem?.ToString() ?? "Standard";
+            _copilot.ActiveMode = comboBoxMode.SelectedItem?.ToString() ?? "Standard";
             _copilot.AutoApprove = menuOptionAutoApprove.Checked;
-            _copilot.FleetMode   = menuOptionFleet.Checked;
+            _copilot.FleetMode = menuOptionFleet.Checked;
 
             AppendOutput($"\r\n📋 Resuming session: {sessionId}\r\n\r\n", AppTheme.ColorMeta);
 
@@ -2401,7 +2401,7 @@ public partial class MainForm : Form
 
         // Replace the persisted list and the live service list with the edited one.
         _settings.SkillTreeFolders = new List<string>(dialog.Folders);
-        _copilot.SkillTreeFolders  = _settings.SkillTreeFolders;
+        _copilot.SkillTreeFolders = _settings.SkillTreeFolders;
 
         UpdateSkillTreeTooltip();
 
@@ -2476,26 +2476,26 @@ public partial class MainForm : Form
                             ?? OptionIconRenderer.CreateSquareBadge(
                                 OptionIconRenderer.AutoApproveSquare,
                                 OptionIconRenderer.AutoApproveGlyph);
-        _badgeFleet       = OptionIconRenderer.LoadEmbeddedBadge(
+        _badgeFleet = OptionIconRenderer.LoadEmbeddedBadge(
                                 OptionIconRenderer.FleetResource)
                             ?? OptionIconRenderer.CreateSquareBadge(
                                 OptionIconRenderer.FleetSquare,
                                 OptionIconRenderer.FleetGlyph);
-        _badgeCaveman     = OptionIconRenderer.LoadEmbeddedBadge(
+        _badgeCaveman = OptionIconRenderer.LoadEmbeddedBadge(
                                 OptionIconRenderer.CavemanResource)
                             ?? OptionIconRenderer.CreateSquareBadge(
                                 OptionIconRenderer.CavemanSquare,
                                 OptionIconRenderer.CavemanGlyph);
-        _badgeShowSteps   = OptionIconRenderer.LoadEmbeddedBadge(
+        _badgeShowSteps = OptionIconRenderer.LoadEmbeddedBadge(
                                 OptionIconRenderer.ShowStepsResource)
                             ?? OptionIconRenderer.CreateSquareBadge(
                                 OptionIconRenderer.ShowStepsSquare,
                                 OptionIconRenderer.ShowStepsGlyph);
 
-        menuSessionCaveman.Image    = _badgeCaveman;
+        menuSessionCaveman.Image = _badgeCaveman;
         menuOptionAutoApprove.Image = _badgeAutoApprove;
-        menuOptionFleet.Image       = _badgeFleet;
-        menuSessionShowSteps.Image  = _badgeShowSteps;
+        menuOptionFleet.Image = _badgeFleet;
+        menuSessionShowSteps.Image = _badgeShowSteps;
 
         // Show the 18x18 badges at their native size in the menu margin
         // instead of letting WinForms downscale them to the default 16x16.
@@ -2520,9 +2520,9 @@ public partial class MainForm : Form
 
         // Keep the on-button badge strip in sync with the menu state.
         menuOptionAutoApprove.CheckedChanged += (_, _) => buttonOptions.Invalidate();
-        menuOptionFleet.CheckedChanged       += (_, _) => buttonOptions.Invalidate();
-        menuSessionCaveman.CheckedChanged    += (_, _) => buttonOptions.Invalidate();
-        menuSessionShowSteps.CheckedChanged  += (_, _) => buttonOptions.Invalidate();
+        menuOptionFleet.CheckedChanged += (_, _) => buttonOptions.Invalidate();
+        menuSessionCaveman.CheckedChanged += (_, _) => buttonOptions.Invalidate();
+        menuSessionShowSteps.CheckedChanged += (_, _) => buttonOptions.Invalidate();
 
         // Clear the design-time caption so our Paint handler owns the entire
         // button surface (otherwise the base button paints "⚙ Options ▾" and
@@ -2542,30 +2542,30 @@ public partial class MainForm : Form
     private void OnOptionsButtonPaint(object? sender, PaintEventArgs e)
     {
         var g = e.Graphics;
-        g.SmoothingMode     = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
 
         var btn = buttonOptions;
         using var font = new Font("Segoe UI", 9f);
 
-        const string label   = "Options";
+        const string label = "Options";
         const string chevron = "\u25BE";
-        const int    badgeSz = 18;
-        const int    gap     = 6;
-        const int    badgeGap = 2;
+        const int badgeSz = 18;
+        const int gap = 6;
+        const int badgeGap = 2;
 
         // Fixed order, with the current Checked state of each menu item.
         // Any badge bitmap that failed to load is skipped so we never
         // leave a hole in the strip.
         var badges = new List<(Bitmap Bmp, bool On)>(4);
         if (_badgeAutoApprove != null) badges.Add((_badgeAutoApprove, menuOptionAutoApprove.Checked));
-        if (_badgeFleet       != null) badges.Add((_badgeFleet,       menuOptionFleet.Checked));
-        if (_badgeCaveman     != null) badges.Add((_badgeCaveman,     menuSessionCaveman.Checked));
-        if (_badgeShowSteps   != null) badges.Add((_badgeShowSteps,   menuSessionShowSteps.Checked));
+        if (_badgeFleet != null) badges.Add((_badgeFleet, menuOptionFleet.Checked));
+        if (_badgeCaveman != null) badges.Add((_badgeCaveman, menuSessionCaveman.Checked));
+        if (_badgeShowSteps != null) badges.Add((_badgeShowSteps, menuSessionShowSteps.Checked));
 
         var fmt = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix
                 | TextFormatFlags.SingleLine;
-        var labelSize   = TextRenderer.MeasureText(g, label,   font, Size.Empty, fmt);
+        var labelSize = TextRenderer.MeasureText(g, label, font, Size.Empty, fmt);
         var chevronSize = TextRenderer.MeasureText(g, chevron, font, Size.Empty, fmt);
 
         int badgesWidth = badges.Count == 0
@@ -2573,7 +2573,7 @@ public partial class MainForm : Form
             : badges.Count * badgeSz + (badges.Count - 1) * badgeGap;
         int totalWidth = labelSize.Width + chevronSize.Width
                        + (badges.Count > 0 ? gap + badgesWidth + gap : gap);
-        int x = (btn.Width  - totalWidth) / 2;
+        int x = (btn.Width - totalWidth) / 2;
         int y = (btn.Height - labelSize.Height) / 2;
 
         TextRenderer.DrawText(g, label, font, new Point(x, y), btn.ForeColor, fmt);
@@ -2780,7 +2780,7 @@ public partial class MainForm : Form
     private void InsertNamedReferenceAtCursor(string kind, string name)
     {
         var reference = $"@{kind}:{name}";
-        var pos  = richTextBoxPrompt.SelectionStart;
+        var pos = richTextBoxPrompt.SelectionStart;
         var text = richTextBoxPrompt.Text;
 
         if (pos > 0 && !char.IsWhiteSpace(text[pos - 1]))
@@ -2789,7 +2789,7 @@ public partial class MainForm : Form
         reference += " ";
 
         richTextBoxPrompt.SelectionLength = 0;
-        richTextBoxPrompt.SelectedText    = reference;
+        richTextBoxPrompt.SelectedText = reference;
         richTextBoxPrompt.Focus();
     }
 
@@ -2818,7 +2818,8 @@ public partial class MainForm : Form
         buttonHistoryNext.Enabled = _promptHistory.CanGoForward;
     }
 
-    private void RichTextBoxPrompt_KeyDown(object? sender, KeyEventArgs e)    {
+    private void RichTextBoxPrompt_KeyDown(object? sender, KeyEventArgs e)
+    {
         if (e.KeyCode == Keys.Enter && e.Control)
         {
             e.Handled = true;
@@ -2912,7 +2913,7 @@ public partial class MainForm : Form
         if (string.IsNullOrEmpty(reference)) return;
 
         reference = $"@{reference}";
-        var pos  = richTextBoxPrompt.SelectionStart;
+        var pos = richTextBoxPrompt.SelectionStart;
         var text = richTextBoxPrompt.Text;
 
         if (pos > 0 && !char.IsWhiteSpace(text[pos - 1]))
@@ -2938,7 +2939,7 @@ public partial class MainForm : Form
         {
             BackColor = AppTheme.StatusBar,
             ForeColor = AppTheme.TextPrimary,
-            Renderer  = new DarkMenuRenderer(),
+            Renderer = new DarkMenuRenderer(),
         };
 
         ToolStripMenuItem Item(string text, EventHandler handler, Keys shortcut = Keys.None)
@@ -2956,29 +2957,29 @@ public partial class MainForm : Form
             return item;
         }
 
-        var cutItem   = Item("Cu&t",   (_, _) => richTextBoxPrompt.Cut(),   Keys.Control | Keys.X);
-        var copyItem  = Item("&Copy",  (_, _) => richTextBoxPrompt.Copy(),  Keys.Control | Keys.C);
+        var cutItem = Item("Cu&t", (_, _) => richTextBoxPrompt.Cut(), Keys.Control | Keys.X);
+        var copyItem = Item("&Copy", (_, _) => richTextBoxPrompt.Copy(), Keys.Control | Keys.C);
         var pasteItem = Item("&Paste", (_, _) => richTextBoxPrompt.Paste(), Keys.Control | Keys.V);
 
         menu.Items.Add(cutItem);
         menu.Items.Add(copyItem);
         menu.Items.Add(pasteItem);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(Item("📄 Add &File...",   ButtonAddFile_Click));
+        menu.Items.Add(Item("📄 Add &File...", ButtonAddFile_Click));
         menu.Items.Add(Item("📁 Add F&older...", ButtonAddFolder_Click));
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(Item("List &Agents...",   (_, _) => ShowAgentList()));
-        menu.Items.Add(Item("List &Skills...",   (_, _) => ShowSkillList()));
-        menu.Items.Add(Item("List Pro&mpts...",  (_, _) => ShowPromptList()));
+        menu.Items.Add(Item("List &Agents...", (_, _) => ShowAgentList()));
+        menu.Items.Add(Item("List &Skills...", (_, _) => ShowSkillList()));
+        menu.Items.Add(Item("List Pro&mpts...", (_, _) => ShowPromptList()));
 
         menu.Opening += (_, _) =>
         {
-            bool readOnly      = richTextBoxPrompt.ReadOnly;
-            bool hasSelection  = richTextBoxPrompt.SelectionLength > 0;
-            bool clipboardHas  = ClipboardHasPastableContent();
+            bool readOnly = richTextBoxPrompt.ReadOnly;
+            bool hasSelection = richTextBoxPrompt.SelectionLength > 0;
+            bool clipboardHas = ClipboardHasPastableContent();
 
-            cutItem.Enabled   = hasSelection && !readOnly;
-            copyItem.Enabled  = hasSelection;
+            cutItem.Enabled = hasSelection && !readOnly;
+            copyItem.Enabled = hasSelection;
             pasteItem.Enabled = clipboardHas && !readOnly;
         };
 
@@ -2989,8 +2990,8 @@ public partial class MainForm : Form
     {
         var parts = new List<string>();
         if ((keys & Keys.Control) == Keys.Control) parts.Add("Ctrl");
-        if ((keys & Keys.Shift)   == Keys.Shift)   parts.Add("Shift");
-        if ((keys & Keys.Alt)     == Keys.Alt)     parts.Add("Alt");
+        if ((keys & Keys.Shift) == Keys.Shift) parts.Add("Shift");
+        if ((keys & Keys.Alt) == Keys.Alt) parts.Add("Alt");
         parts.Add((keys & Keys.KeyCode).ToString());
         return string.Join("+", parts);
     }
@@ -3153,13 +3154,13 @@ public partial class MainForm : Form
 
     private static string? MatchPictExtension(string controlWord) => controlWord switch
     {
-        "pngblip"                                => ".png",
-        "jpegblip"                               => ".jpg",
-        "emfblip"                                => ".emf",
-        "wmetafile"  or "wmetafile8"             => ".wmf",
-        "dibitmap"   or "dibitmap0"              => ".dib",
-        "wbitmap"    or "wbitmap0"               => ".bmp",
-        _                                        => null,
+        "pngblip" => ".png",
+        "jpegblip" => ".jpg",
+        "emfblip" => ".emf",
+        "wmetafile" or "wmetafile8" => ".wmf",
+        "dibitmap" or "dibitmap0" => ".dib",
+        "wbitmap" or "wbitmap0" => ".bmp",
+        _ => null,
     };
 
     private static bool IsHexDigit(char c) =>
@@ -3287,107 +3288,107 @@ public partial class MainForm : Form
                 break;
 
             case MessageKind.SubAgentStart:
-            {
-                if (_streamingSessions.Remove(args.SessionId))
-                    AppendRaw("\r\n", AppTheme.ColorDefault);
-                AppendRaw("\r\n", AppTheme.ColorDefault);
-                if (!string.IsNullOrEmpty(args.ToolCallId))
                 {
-                    _activeSubAgents[args.ToolCallId] = args.SubAgentDisplayName ?? args.Content;
-                    _subAgentStartPositions[args.ToolCallId] = richTextBoxOutput.TextLength;
+                    if (_streamingSessions.Remove(args.SessionId))
+                        AppendRaw("\r\n", AppTheme.ColorDefault);
+                    AppendRaw("\r\n", AppTheme.ColorDefault);
+                    if (!string.IsNullOrEmpty(args.ToolCallId))
+                    {
+                        _activeSubAgents[args.ToolCallId] = args.SubAgentDisplayName ?? args.Content;
+                        _subAgentStartPositions[args.ToolCallId] = richTextBoxOutput.TextLength;
+                    }
+                    var saName = args.SubAgentDisplayName ?? args.Content;
+                    var saDesc = string.IsNullOrEmpty(args.SubAgentDescription) ? ""
+                        : $" — {(args.SubAgentDescription.Length > 60 ? args.SubAgentDescription[..60] + "…" : args.SubAgentDescription)}";
+                    AppendRaw($"○ {saName}{saDesc}\r\n", AppTheme.ColorSubAgent);
+                    UpdateAgentStatus();
+                    scrollNeeded = true;
+                    break;
                 }
-                var saName = args.SubAgentDisplayName ?? args.Content;
-                var saDesc = string.IsNullOrEmpty(args.SubAgentDescription) ? ""
-                    : $" — {(args.SubAgentDescription.Length > 60 ? args.SubAgentDescription[..60] + "…" : args.SubAgentDescription)}";
-                AppendRaw($"○ {saName}{saDesc}\r\n", AppTheme.ColorSubAgent);
-                UpdateAgentStatus();
-                scrollNeeded = true;
-                break;
-            }
 
             case MessageKind.SubAgentComplete:
-            {
-                if (!string.IsNullOrEmpty(args.ToolCallId))
                 {
-                    _activeSubAgents.Remove(args.ToolCallId);
-                    _completedAgentCount++;
-                    if (_subAgentStartPositions.TryGetValue(args.ToolCallId, out var saPos))
+                    if (!string.IsNullOrEmpty(args.ToolCallId))
                     {
-                        _subAgentStartPositions.Remove(args.ToolCallId);
-                        WithoutRedraw(richTextBoxOutput, () =>
+                        _activeSubAgents.Remove(args.ToolCallId);
+                        _completedAgentCount++;
+                        if (_subAgentStartPositions.TryGetValue(args.ToolCallId, out var saPos))
                         {
-                            richTextBoxOutput.Select(saPos, 1);
-                            richTextBoxOutput.SelectionColor = AppTheme.ColorAssistant;
-                            richTextBoxOutput.SelectedText = "◉";
-                            richTextBoxOutput.SelectionStart = richTextBoxOutput.TextLength;
-                        });
+                            _subAgentStartPositions.Remove(args.ToolCallId);
+                            WithoutRedraw(richTextBoxOutput, () =>
+                            {
+                                richTextBoxOutput.Select(saPos, 1);
+                                richTextBoxOutput.SelectionColor = AppTheme.ColorAssistant;
+                                richTextBoxOutput.SelectedText = "◉";
+                                richTextBoxOutput.SelectionStart = richTextBoxOutput.TextLength;
+                            });
+                        }
                     }
+                    var stats = FormatSubAgentStats(args);
+                    if (stats != null)
+                    {
+                        AppendRaw($"  ↳ {stats}\r\n", AppTheme.ColorToolDim);
+                        scrollNeeded = true;
+                    }
+                    if (_mainSessionIdle && _activeSubAgents.Count == 0)
+                        CompleteMainSession();
+                    else
+                    {
+                        if (_mainSessionIdle) RestartSubAgentWatchdog();
+                        UpdateAgentStatus();
+                    }
+                    break;
                 }
-                var stats = FormatSubAgentStats(args);
-                if (stats != null)
-                {
-                    AppendRaw($"  ↳ {stats}\r\n", AppTheme.ColorToolDim);
-                    scrollNeeded = true;
-                }
-                if (_mainSessionIdle && _activeSubAgents.Count == 0)
-                    CompleteMainSession();
-                else
-                {
-                    if (_mainSessionIdle) RestartSubAgentWatchdog();
-                    UpdateAgentStatus();
-                }
-                break;
-            }
 
             case MessageKind.SubAgentFailed:
-            {
-                if (!string.IsNullOrEmpty(args.ToolCallId))
                 {
-                    _activeSubAgents.Remove(args.ToolCallId);
-                    _completedAgentCount++;
-                    if (_subAgentStartPositions.TryGetValue(args.ToolCallId, out var saPos))
+                    if (!string.IsNullOrEmpty(args.ToolCallId))
                     {
-                        _subAgentStartPositions.Remove(args.ToolCallId);
-                        WithoutRedraw(richTextBoxOutput, () =>
+                        _activeSubAgents.Remove(args.ToolCallId);
+                        _completedAgentCount++;
+                        if (_subAgentStartPositions.TryGetValue(args.ToolCallId, out var saPos))
                         {
-                            richTextBoxOutput.Select(saPos, 1);
-                            richTextBoxOutput.SelectionColor = AppTheme.ColorError;
-                            richTextBoxOutput.SelectedText = "✗";
-                            richTextBoxOutput.SelectionStart = richTextBoxOutput.TextLength;
-                        });
+                            _subAgentStartPositions.Remove(args.ToolCallId);
+                            WithoutRedraw(richTextBoxOutput, () =>
+                            {
+                                richTextBoxOutput.Select(saPos, 1);
+                                richTextBoxOutput.SelectionColor = AppTheme.ColorError;
+                                richTextBoxOutput.SelectedText = "✗";
+                                richTextBoxOutput.SelectionStart = richTextBoxOutput.TextLength;
+                            });
+                        }
                     }
+                    if (!string.IsNullOrEmpty(args.Content))
+                    {
+                        AppendRaw($"  ✗ {args.SubAgentDisplayName}: {args.Content}\r\n", AppTheme.ColorError);
+                        scrollNeeded = true;
+                    }
+                    var failStats = FormatSubAgentStats(args);
+                    if (failStats != null)
+                    {
+                        AppendRaw($"  ↳ {failStats}\r\n", AppTheme.ColorToolDim);
+                        scrollNeeded = true;
+                    }
+                    if (_mainSessionIdle && _activeSubAgents.Count == 0)
+                        CompleteMainSession();
+                    else
+                    {
+                        if (_mainSessionIdle) RestartSubAgentWatchdog();
+                        UpdateAgentStatus();
+                    }
+                    break;
                 }
-                if (!string.IsNullOrEmpty(args.Content))
-                {
-                    AppendRaw($"  ✗ {args.SubAgentDisplayName}: {args.Content}\r\n", AppTheme.ColorError);
-                    scrollNeeded = true;
-                }
-                var failStats = FormatSubAgentStats(args);
-                if (failStats != null)
-                {
-                    AppendRaw($"  ↳ {failStats}\r\n", AppTheme.ColorToolDim);
-                    scrollNeeded = true;
-                }
-                if (_mainSessionIdle && _activeSubAgents.Count == 0)
-                    CompleteMainSession();
-                else
-                {
-                    if (_mainSessionIdle) RestartSubAgentWatchdog();
-                    UpdateAgentStatus();
-                }
-                break;
-            }
 
             case MessageKind.SkillInvoked:
-            {
-                if (_streamingSessions.Remove(args.SessionId))
-                    AppendRaw("\r\n", AppTheme.ColorDefault);
-                var desc = string.IsNullOrEmpty(args.SubAgentDescription) ? ""
-                    : $" — {args.SubAgentDescription}";
-                AppendRaw($"  📚 Skill: {args.Content}{desc}\r\n", AppTheme.ColorMeta);
-                scrollNeeded = true;
-                break;
-            }
+                {
+                    if (_streamingSessions.Remove(args.SessionId))
+                        AppendRaw("\r\n", AppTheme.ColorDefault);
+                    var desc = string.IsNullOrEmpty(args.SubAgentDescription) ? ""
+                        : $" — {args.SubAgentDescription}";
+                    AppendRaw($"  📚 Skill: {args.Content}{desc}\r\n", AppTheme.ColorMeta);
+                    scrollNeeded = true;
+                    break;
+                }
 
             case MessageKind.CustomAgentsUpdated:
                 AppendRaw($"[{args.Content}]\r\n\r\n", AppTheme.ColorMeta);
@@ -3395,16 +3396,16 @@ public partial class MainForm : Form
                 break;
 
             case MessageKind.ToolStart:
-            {
-                if (_streamingSessions.Remove(args.SessionId))
-                    AppendRaw("\r\n", AppTheme.ColorDefault);
-                var argPart = string.IsNullOrEmpty(args.ToolArgSummary) ? "" : $"  {args.ToolArgSummary}";
-                AppendRaw($"  🔧 {args.Content}{argPart}", AppTheme.ColorTool);
-                if (!string.IsNullOrEmpty(args.ToolCallId))
-                    _toolStartPositions[args.ToolCallId] = richTextBoxOutput.TextLength;
-                scrollNeeded = true;
-                break;
-            }
+                {
+                    if (_streamingSessions.Remove(args.SessionId))
+                        AppendRaw("\r\n", AppTheme.ColorDefault);
+                    var argPart = string.IsNullOrEmpty(args.ToolArgSummary) ? "" : $"  {args.ToolArgSummary}";
+                    AppendRaw($"  🔧 {args.Content}{argPart}", AppTheme.ColorTool);
+                    if (!string.IsNullOrEmpty(args.ToolCallId))
+                        _toolStartPositions[args.ToolCallId] = richTextBoxOutput.TextLength;
+                    scrollNeeded = true;
+                    break;
+                }
 
             case MessageKind.ToolProgress:
                 if (!string.IsNullOrEmpty(args.Content))
@@ -3415,40 +3416,40 @@ public partial class MainForm : Form
                 break;
 
             case MessageKind.ToolComplete:
-            {
-                if (!string.IsNullOrEmpty(args.ToolCallId) &&
-                    _toolStartPositions.TryGetValue(args.ToolCallId, out var insertAt))
                 {
-                    _toolStartPositions.Remove(args.ToolCallId);
-                    string tick = args.ToolSuccess ? " ✓\r\n" : " ✗\r\n";
-                    WithoutRedraw(richTextBoxOutput, () =>
+                    if (!string.IsNullOrEmpty(args.ToolCallId) &&
+                        _toolStartPositions.TryGetValue(args.ToolCallId, out var insertAt))
                     {
-                        richTextBoxOutput.Select(insertAt, 0);
-                        richTextBoxOutput.SelectionColor = args.ToolSuccess ? AppTheme.ColorAssistant : AppTheme.ColorError;
-                        richTextBoxOutput.SelectedText = tick;
-                        foreach (var key in _toolStartPositions.Keys.ToList())
-                            if (_toolStartPositions[key] >= insertAt)
-                                _toolStartPositions[key] += tick.Length;
-                        foreach (var key in _subAgentStartPositions.Keys.ToList())
-                            if (_subAgentStartPositions[key] >= insertAt)
-                                _subAgentStartPositions[key] += tick.Length;
-                        richTextBoxOutput.SelectionStart = richTextBoxOutput.TextLength;
-                    });
-                    if (!string.IsNullOrEmpty(args.ToolResultSummary))
+                        _toolStartPositions.Remove(args.ToolCallId);
+                        string tick = args.ToolSuccess ? " ✓\r\n" : " ✗\r\n";
+                        WithoutRedraw(richTextBoxOutput, () =>
+                        {
+                            richTextBoxOutput.Select(insertAt, 0);
+                            richTextBoxOutput.SelectionColor = args.ToolSuccess ? AppTheme.ColorAssistant : AppTheme.ColorError;
+                            richTextBoxOutput.SelectedText = tick;
+                            foreach (var key in _toolStartPositions.Keys.ToList())
+                                if (_toolStartPositions[key] >= insertAt)
+                                    _toolStartPositions[key] += tick.Length;
+                            foreach (var key in _subAgentStartPositions.Keys.ToList())
+                                if (_subAgentStartPositions[key] >= insertAt)
+                                    _subAgentStartPositions[key] += tick.Length;
+                            richTextBoxOutput.SelectionStart = richTextBoxOutput.TextLength;
+                        });
+                        if (!string.IsNullOrEmpty(args.ToolResultSummary))
+                        {
+                            var rc = args.ToolSuccess ? AppTheme.ColorToolDim : AppTheme.ColorError;
+                            AppendRaw($"  └ {args.ToolResultSummary}\r\n", rc);
+                            scrollNeeded = true;
+                        }
+                    }
+                    else
                     {
-                        var rc = args.ToolSuccess ? AppTheme.ColorToolDim : AppTheme.ColorError;
-                        AppendRaw($"  └ {args.ToolResultSummary}\r\n", rc);
+                        AppendRaw(args.ToolSuccess ? "  ✓\r\n" : "  ✗\r\n",
+                            args.ToolSuccess ? AppTheme.ColorAssistant : AppTheme.ColorError);
                         scrollNeeded = true;
                     }
+                    break;
                 }
-                else
-                {
-                    AppendRaw(args.ToolSuccess ? "  ✓\r\n" : "  ✗\r\n",
-                        args.ToolSuccess ? AppTheme.ColorAssistant : AppTheme.ColorError);
-                    scrollNeeded = true;
-                }
-                break;
-            }
 
             case MessageKind.BytesUpdate:
                 _totalBytesReceived = args.TotalBytes;
@@ -3591,9 +3592,9 @@ public partial class MainForm : Form
     private void ResetSessionTrackingState()
     {
         _subAgentWatchdog.Stop();
-        _pendingCount        = 0;
-        _mainSessionIdle     = false;
-        _totalBytesReceived  = 0;
+        _pendingCount = 0;
+        _mainSessionIdle = false;
+        _totalBytesReceived = 0;
         _completedAgentCount = 0;
         _activeSubAgents.Clear();
         _activeSubAgentSessions.Clear();
@@ -3667,252 +3668,252 @@ public partial class MainForm : Form
         switch (args.Kind)
         {
             case MessageKind.AssistantDelta:
-            {
-                // Assistant text begins -- close any open Reasoning/Tool sections
-                // for this session so they get a smart summary BEFORE the reply
-                // streams in.  Errors must always be surfaced top-level too.
-                CloseAnyOpenSectionsForSession(args.SessionId);
-
-                if (!_streamingBlocks.TryGetValue(args.SessionId, out var block))
                 {
-                    block = new OutputBlock(BlockKind.Assistant) { Label = "\U0001f916 Assistant:" };
-                    _outputBlocks.Add(block);
-                    _streamingBlocks[args.SessionId] = block;
-                    WebViewAppendBlock(block);
+                    // Assistant text begins -- close any open Reasoning/Tool sections
+                    // for this session so they get a smart summary BEFORE the reply
+                    // streams in.  Errors must always be surfaced top-level too.
+                    CloseAnyOpenSectionsForSession(args.SessionId);
+
+                    if (!_streamingBlocks.TryGetValue(args.SessionId, out var block))
+                    {
+                        block = new OutputBlock(BlockKind.Assistant) { Label = "\U0001f916 Assistant:" };
+                        _outputBlocks.Add(block);
+                        _streamingBlocks[args.SessionId] = block;
+                        WebViewAppendBlock(block);
+                    }
+                    block.Content += args.Content;
+                    WebViewUpdateBlock(block);
+                    break;
                 }
-                block.Content += args.Content;
-                WebViewUpdateBlock(block);
-                break;
-            }
 
             case MessageKind.AssistantFinal:
-            {
-                CloseAnyOpenSectionsForSession(args.SessionId);
-                if (_streamingBlocks.TryGetValue(args.SessionId, out var block))
                 {
-                    block.IsComplete = true;
-                    _streamingBlocks.Remove(args.SessionId);
-                    WebViewFinalizeBlock(block);
-                }
-                else
-                {
-                    // Non-streamed final message
-                    var finalBlock = new OutputBlock(BlockKind.Assistant)
+                    CloseAnyOpenSectionsForSession(args.SessionId);
+                    if (_streamingBlocks.TryGetValue(args.SessionId, out var block))
                     {
-                        Label = "\U0001f916 Assistant:",
-                        Content = args.Content,
-                        IsComplete = true
-                    };
-                    _outputBlocks.Add(finalBlock);
-                    WebViewAppendBlock(finalBlock);
-                    WebViewFinalizeBlock(finalBlock);
+                        block.IsComplete = true;
+                        _streamingBlocks.Remove(args.SessionId);
+                        WebViewFinalizeBlock(block);
+                    }
+                    else
+                    {
+                        // Non-streamed final message
+                        var finalBlock = new OutputBlock(BlockKind.Assistant)
+                        {
+                            Label = "\U0001f916 Assistant:",
+                            Content = args.Content,
+                            IsComplete = true
+                        };
+                        _outputBlocks.Add(finalBlock);
+                        WebViewAppendBlock(finalBlock);
+                        WebViewFinalizeBlock(finalBlock);
+                    }
+                    break;
                 }
-                break;
-            }
 
             case MessageKind.Reasoning:
-            {
-                // Reasoning closes any open Tool section first (different kind).
-                CloseToolSection(args.SessionId);
-
-                if (!_openReasoningSections.TryGetValue(args.SessionId, out var sec))
                 {
-                    sec = new OpenReasoningSection
+                    // Reasoning closes any open Tool section first (different kind).
+                    CloseToolSection(args.SessionId);
+
+                    if (!_openReasoningSections.TryGetValue(args.SessionId, out var sec))
                     {
-                        SectionId    = $"r{System.Threading.Interlocked.Increment(ref _nextSectionId)}",
-                        SessionId    = args.SessionId,
-                        StartedAtUtc = DateTime.UtcNow,
-                    };
-                    _openReasoningSections[args.SessionId] = sec;
-                    WebViewAppendSection(sec.SectionId, "reasoning", "\U0001f4ad Reasoning...");
+                        sec = new OpenReasoningSection
+                        {
+                            SectionId = $"r{System.Threading.Interlocked.Increment(ref _nextSectionId)}",
+                            SessionId = args.SessionId,
+                            StartedAtUtc = DateTime.UtcNow,
+                        };
+                        _openReasoningSections[args.SessionId] = sec;
+                        WebViewAppendSection(sec.SectionId, "reasoning", "\U0001f4ad Reasoning...");
+                    }
+                    sec.Chunks++;
+                    if (sec.Content.Length > 0)
+                        sec.Content.Append("\r\n\r\n");
+                    sec.Content.Append(args.Content);
+                    // Pass raw markdown to JS; the renderer parses it inside setSectionContent.
+                    WebViewSetSectionContent(sec.SectionId, sec.Content.ToString(), isMarkdown: true);
+                    break;
                 }
-                sec.Chunks++;
-                if (sec.Content.Length > 0)
-                    sec.Content.Append("\r\n\r\n");
-                sec.Content.Append(args.Content);
-                // Pass raw markdown to JS; the renderer parses it inside setSectionContent.
-                WebViewSetSectionContent(sec.SectionId, sec.Content.ToString(), isMarkdown: true);
-                break;
-            }
 
             case MessageKind.SubAgentStart:
-            {
-                FinalizeStreamingBlock(args.SessionId);
-                CloseAnyOpenSectionsForSession(args.SessionId);
-                var saName = args.SubAgentDisplayName ?? args.Content;
-                var saDesc = string.IsNullOrEmpty(args.SubAgentDescription) ? ""
-                    : $" -- {(args.SubAgentDescription.Length > 60 ? args.SubAgentDescription[..60] + "..." : args.SubAgentDescription)}";
-                var block = new OutputBlock(BlockKind.SubAgent)
                 {
-                    Content = $"\u25CB {saName}{saDesc}"
-                };
-                _outputBlocks.Add(block);
-                if (!string.IsNullOrEmpty(args.ToolCallId))
-                    _renderedSubAgentBlocks[args.ToolCallId] = block;
-                WebViewAppendBlock(block);
-                break;
-            }
+                    FinalizeStreamingBlock(args.SessionId);
+                    CloseAnyOpenSectionsForSession(args.SessionId);
+                    var saName = args.SubAgentDisplayName ?? args.Content;
+                    var saDesc = string.IsNullOrEmpty(args.SubAgentDescription) ? ""
+                        : $" -- {(args.SubAgentDescription.Length > 60 ? args.SubAgentDescription[..60] + "..." : args.SubAgentDescription)}";
+                    var block = new OutputBlock(BlockKind.SubAgent)
+                    {
+                        Content = $"\u25CB {saName}{saDesc}"
+                    };
+                    _outputBlocks.Add(block);
+                    if (!string.IsNullOrEmpty(args.ToolCallId))
+                        _renderedSubAgentBlocks[args.ToolCallId] = block;
+                    WebViewAppendBlock(block);
+                    break;
+                }
 
             case MessageKind.SubAgentComplete:
-            {
-                CloseAnyOpenSectionsForSession(args.SessionId);
-                if (!string.IsNullOrEmpty(args.ToolCallId) &&
-                    _renderedSubAgentBlocks.TryGetValue(args.ToolCallId, out var saBlock))
                 {
-                    _renderedSubAgentBlocks.Remove(args.ToolCallId);
-                    var stats = FormatSubAgentStats(args);
-                    if (stats != null)
-                        WebViewAppendToolStatus(saBlock,
-                            $"<span class=\"subagent-complete\">\u25C9</span> {EscapeForJs(stats)}");
+                    CloseAnyOpenSectionsForSession(args.SessionId);
+                    if (!string.IsNullOrEmpty(args.ToolCallId) &&
+                        _renderedSubAgentBlocks.TryGetValue(args.ToolCallId, out var saBlock))
+                    {
+                        _renderedSubAgentBlocks.Remove(args.ToolCallId);
+                        var stats = FormatSubAgentStats(args);
+                        if (stats != null)
+                            WebViewAppendToolStatus(saBlock,
+                                $"<span class=\"subagent-complete\">\u25C9</span> {EscapeForJs(stats)}");
+                    }
+                    break;
                 }
-                break;
-            }
 
             case MessageKind.SubAgentFailed:
-            {
-                CloseAnyOpenSectionsForSession(args.SessionId);
-                if (!string.IsNullOrEmpty(args.ToolCallId) &&
-                    _renderedSubAgentBlocks.TryGetValue(args.ToolCallId, out var saBlock))
                 {
-                    _renderedSubAgentBlocks.Remove(args.ToolCallId);
-                    var msg = !string.IsNullOrEmpty(args.Content)
-                        ? $"<span class=\"subagent-failed\">\u2717 {EscapeForJs(args.SubAgentDisplayName ?? "")}: {EscapeForJs(args.Content)}</span>"
-                        : "<span class=\"subagent-failed\">\u2717</span>";
-                    WebViewAppendToolStatus(saBlock, msg);
+                    CloseAnyOpenSectionsForSession(args.SessionId);
+                    if (!string.IsNullOrEmpty(args.ToolCallId) &&
+                        _renderedSubAgentBlocks.TryGetValue(args.ToolCallId, out var saBlock))
+                    {
+                        _renderedSubAgentBlocks.Remove(args.ToolCallId);
+                        var msg = !string.IsNullOrEmpty(args.Content)
+                            ? $"<span class=\"subagent-failed\">\u2717 {EscapeForJs(args.SubAgentDisplayName ?? "")}: {EscapeForJs(args.Content)}</span>"
+                            : "<span class=\"subagent-failed\">\u2717</span>";
+                        WebViewAppendToolStatus(saBlock, msg);
+                    }
+                    break;
                 }
-                break;
-            }
 
             case MessageKind.SkillInvoked:
-            {
-                FinalizeStreamingBlock(args.SessionId);
-                CloseAnyOpenSectionsForSession(args.SessionId);
-                var desc = string.IsNullOrEmpty(args.SubAgentDescription) ? ""
-                    : $" -- {args.SubAgentDescription}";
-                var block = new OutputBlock(BlockKind.Status)
                 {
-                    Content = $"\U0001f4da Skill: {args.Content}{desc}",
-                    IsComplete = true
-                };
-                _outputBlocks.Add(block);
-                WebViewAppendBlock(block);
-                break;
-            }
-
-            case MessageKind.CustomAgentsUpdated:
-            {
-                CloseAnyOpenSectionsForSession(args.SessionId);
-                var block = new OutputBlock(BlockKind.Status)
-                {
-                    Content = $"[{args.Content}]",
-                    IsComplete = true
-                };
-                _outputBlocks.Add(block);
-                WebViewAppendBlock(block);
-                break;
-            }
-
-            case MessageKind.ToolStart:
-            {
-                // Tools close any open Reasoning section first (different kind).
-                FinalizeStreamingBlock(args.SessionId);
-                CloseReasoningSection(args.SessionId);
-
-                if (!_openToolSections.TryGetValue(args.SessionId, out var sec))
-                {
-                    sec = new OpenToolSection
+                    FinalizeStreamingBlock(args.SessionId);
+                    CloseAnyOpenSectionsForSession(args.SessionId);
+                    var desc = string.IsNullOrEmpty(args.SubAgentDescription) ? ""
+                        : $" -- {args.SubAgentDescription}";
+                    var block = new OutputBlock(BlockKind.Status)
                     {
-                        SectionId    = $"t{System.Threading.Interlocked.Increment(ref _nextSectionId)}",
-                        SessionId    = args.SessionId,
-                        StartedAtUtc = DateTime.UtcNow,
-                    };
-                    _openToolSections[args.SessionId] = sec;
-                    WebViewAppendSection(sec.SectionId, "tools", "\U0001f527 Working...");
-                }
-                var lineId = !string.IsNullOrEmpty(args.ToolCallId)
-                    ? args.ToolCallId
-                    : $"l{System.Threading.Interlocked.Increment(ref _nextSectionId)}";
-                var line = new OpenToolLine
-                {
-                    LineId     = lineId,
-                    ToolName   = args.Content ?? "",
-                    ArgSummary = args.ToolArgSummary ?? "",
-                };
-                sec.Lines.Add(line);
-                _openToolLines[lineId] = line;
-                WebViewAppendSectionLine(sec.SectionId, lineId, RebuildToolLineHtml(line));
-                break;
-            }
-
-            case MessageKind.ToolProgress:
-            {
-                if (!string.IsNullOrEmpty(args.Content) &&
-                    !string.IsNullOrEmpty(args.ToolCallId) &&
-                    _openToolLines.TryGetValue(args.ToolCallId, out var line))
-                {
-                    line.ProgressMessages.Add(args.Content);
-                    WebViewUpdateSectionLine(line.LineId, RebuildToolLineHtml(line));
-                }
-                break;
-            }
-
-            case MessageKind.ToolComplete:
-            {
-                if (!string.IsNullOrEmpty(args.ToolCallId) &&
-                    _openToolLines.TryGetValue(args.ToolCallId, out var line))
-                {
-                    line.Success       = args.ToolSuccess;
-                    line.ResultSummary = args.ToolResultSummary;
-                    var section = FindToolSectionContaining(line);
-                    if (section != null && !args.ToolSuccess)
-                        section.HasFailure = true;
-                    WebViewUpdateSectionLine(line.LineId, RebuildToolLineHtml(line));
-                    if (!args.ToolSuccess)
-                        WebViewMarkSectionLineFailed(line.LineId);
-                }
-                break;
-            }
-
-            case MessageKind.Error:
-            {
-                // Errors are NEVER inside a collapsible. Close any open sections
-                // for this session cleanly first, then surface the error top-level.
-                FinalizeStreamingBlock(args.SessionId);
-                CloseAnyOpenSectionsForSession(args.SessionId);
-                var block = new OutputBlock(BlockKind.Error)
-                {
-                    Content = $"\u274C Error: {args.Content}",
-                    IsComplete = true
-                };
-                _outputBlocks.Add(block);
-                WebViewAppendBlock(block);
-
-                if (args.Content.Contains("CAPIError: 400") || args.Content.Contains("400 Bad Request"))
-                {
-                    var tipBlock = new OutputBlock(BlockKind.Status)
-                    {
-                        Content = "\U0001f4a1 Tip: This usually means the session's context window is full. " +
-                            "Try changing the mode or model to start a fresh session.",
+                        Content = $"\U0001f4da Skill: {args.Content}{desc}",
                         IsComplete = true
                     };
-                    _outputBlocks.Add(tipBlock);
-                    WebViewAppendBlock(tipBlock);
+                    _outputBlocks.Add(block);
+                    WebViewAppendBlock(block);
+                    break;
                 }
-                break;
-            }
+
+            case MessageKind.CustomAgentsUpdated:
+                {
+                    CloseAnyOpenSectionsForSession(args.SessionId);
+                    var block = new OutputBlock(BlockKind.Status)
+                    {
+                        Content = $"[{args.Content}]",
+                        IsComplete = true
+                    };
+                    _outputBlocks.Add(block);
+                    WebViewAppendBlock(block);
+                    break;
+                }
+
+            case MessageKind.ToolStart:
+                {
+                    // Tools close any open Reasoning section first (different kind).
+                    FinalizeStreamingBlock(args.SessionId);
+                    CloseReasoningSection(args.SessionId);
+
+                    if (!_openToolSections.TryGetValue(args.SessionId, out var sec))
+                    {
+                        sec = new OpenToolSection
+                        {
+                            SectionId = $"t{System.Threading.Interlocked.Increment(ref _nextSectionId)}",
+                            SessionId = args.SessionId,
+                            StartedAtUtc = DateTime.UtcNow,
+                        };
+                        _openToolSections[args.SessionId] = sec;
+                        WebViewAppendSection(sec.SectionId, "tools", "\U0001f527 Working...");
+                    }
+                    var lineId = !string.IsNullOrEmpty(args.ToolCallId)
+                        ? args.ToolCallId
+                        : $"l{System.Threading.Interlocked.Increment(ref _nextSectionId)}";
+                    var line = new OpenToolLine
+                    {
+                        LineId = lineId,
+                        ToolName = args.Content ?? "",
+                        ArgSummary = args.ToolArgSummary ?? "",
+                    };
+                    sec.Lines.Add(line);
+                    _openToolLines[lineId] = line;
+                    WebViewAppendSectionLine(sec.SectionId, lineId, RebuildToolLineHtml(line));
+                    break;
+                }
+
+            case MessageKind.ToolProgress:
+                {
+                    if (!string.IsNullOrEmpty(args.Content) &&
+                        !string.IsNullOrEmpty(args.ToolCallId) &&
+                        _openToolLines.TryGetValue(args.ToolCallId, out var line))
+                    {
+                        line.ProgressMessages.Add(args.Content);
+                        WebViewUpdateSectionLine(line.LineId, RebuildToolLineHtml(line));
+                    }
+                    break;
+                }
+
+            case MessageKind.ToolComplete:
+                {
+                    if (!string.IsNullOrEmpty(args.ToolCallId) &&
+                        _openToolLines.TryGetValue(args.ToolCallId, out var line))
+                    {
+                        line.Success = args.ToolSuccess;
+                        line.ResultSummary = args.ToolResultSummary;
+                        var section = FindToolSectionContaining(line);
+                        if (section != null && !args.ToolSuccess)
+                            section.HasFailure = true;
+                        WebViewUpdateSectionLine(line.LineId, RebuildToolLineHtml(line));
+                        if (!args.ToolSuccess)
+                            WebViewMarkSectionLineFailed(line.LineId);
+                    }
+                    break;
+                }
+
+            case MessageKind.Error:
+                {
+                    // Errors are NEVER inside a collapsible. Close any open sections
+                    // for this session cleanly first, then surface the error top-level.
+                    FinalizeStreamingBlock(args.SessionId);
+                    CloseAnyOpenSectionsForSession(args.SessionId);
+                    var block = new OutputBlock(BlockKind.Error)
+                    {
+                        Content = $"\u274C Error: {args.Content}",
+                        IsComplete = true
+                    };
+                    _outputBlocks.Add(block);
+                    WebViewAppendBlock(block);
+
+                    if (args.Content.Contains("CAPIError: 400") || args.Content.Contains("400 Bad Request"))
+                    {
+                        var tipBlock = new OutputBlock(BlockKind.Status)
+                        {
+                            Content = "\U0001f4a1 Tip: This usually means the session's context window is full. " +
+                                "Try changing the mode or model to start a fresh session.",
+                            IsComplete = true
+                        };
+                        _outputBlocks.Add(tipBlock);
+                        WebViewAppendBlock(tipBlock);
+                    }
+                    break;
+                }
 
             case MessageKind.Status:
-            {
-                CloseAnyOpenSectionsForSession(args.SessionId);
-                var block = new OutputBlock(BlockKind.Status)
                 {
-                    Content = $"[{args.Content}]",
-                    IsComplete = true
-                };
-                _outputBlocks.Add(block);
-                WebViewAppendBlock(block);
-                break;
-            }
+                    CloseAnyOpenSectionsForSession(args.SessionId);
+                    var block = new OutputBlock(BlockKind.Status)
+                    {
+                        Content = $"[{args.Content}]",
+                        IsComplete = true
+                    };
+                    _outputBlocks.Add(block);
+                    WebViewAppendBlock(block);
+                    break;
+                }
         }
     }
 
@@ -4061,8 +4062,8 @@ public partial class MainForm : Form
     /// AssistantReasoningEvents from a single session.</summary>
     private sealed class OpenReasoningSection
     {
-        public string SectionId    = "";
-        public string SessionId    = "";
+        public string SectionId = "";
+        public string SessionId = "";
         public DateTime StartedAtUtc;
         public int Chunks;
         public System.Text.StringBuilder Content = new();
@@ -4072,8 +4073,8 @@ public partial class MainForm : Form
     /// tool-call events from a single session.</summary>
     private sealed class OpenToolSection
     {
-        public string SectionId    = "";
-        public string SessionId    = "";
+        public string SectionId = "";
+        public string SessionId = "";
         public DateTime StartedAtUtc;
         public List<OpenToolLine> Lines = new();
         public bool HasFailure;
@@ -4082,9 +4083,9 @@ public partial class MainForm : Form
     /// <summary>Per-tool-call line state inside an OpenToolSection.</summary>
     private sealed class OpenToolLine
     {
-        public string LineId        = "";
-        public string ToolName      = "";
-        public string ArgSummary    = "";
+        public string LineId = "";
+        public string ToolName = "";
+        public string ArgSummary = "";
         public List<string> ProgressMessages = new();
         public bool? Success;       // null = still running
         public string? ResultSummary;
@@ -4163,8 +4164,8 @@ public partial class MainForm : Form
             sb.Append("  ").Append(EscapeForJs(line.ArgSummary));
         if (line.Success.HasValue)
         {
-            var cls  = line.Success.Value ? "tool-success" : "tool-failure";
-            var tick = line.Success.Value ? "\u2713"       : "\u2717";
+            var cls = line.Success.Value ? "tool-success" : "tool-failure";
+            var tick = line.Success.Value ? "\u2713" : "\u2717";
             sb.Append(" <span class=\"").Append(cls).Append("\">").Append(tick).Append("</span>");
         }
         foreach (var msg in line.ProgressMessages)
@@ -4198,7 +4199,7 @@ public partial class MainForm : Form
             : (sec.Chunks == 2 ? "Thought twice" : $"Thought {sec.Chunks} times");
 
         var statBits = new List<string>();
-        if (dur >= 1)  statBits.Add($"{dur}s");
+        if (dur >= 1) statBits.Add($"{dur}s");
         if (words > 0) statBits.Add($"{words} word{(words == 1 ? "" : "s")}");
         var stats = statBits.Count > 0 ? $" ({string.Join(", ", statBits)})" : "";
         return $"\U0001f4ad {label}{stats}";
@@ -4213,7 +4214,7 @@ public partial class MainForm : Form
 
         // Preserve the order tools first appeared in by iterating the list.
         var orderedCategories = new List<string>();
-        var categoryCounts    = new Dictionary<string, int>(StringComparer.Ordinal);
+        var categoryCounts = new Dictionary<string, int>(StringComparer.Ordinal);
         int failed = 0;
         foreach (var line in sec.Lines)
         {
@@ -4242,33 +4243,33 @@ public partial class MainForm : Form
         var n = (name ?? "").ToLowerInvariant();
         // Order matters: more-specific verbs before generic substrings.
         if (n.Contains("apply_patch") || n.Contains("str_replace")
-            || n.Contains("write")    || n.Contains("edit")
-            || n.Contains("create")   || n.Contains("update"))      return "edit";
+            || n.Contains("write") || n.Contains("edit")
+            || n.Contains("create") || n.Contains("update")) return "edit";
         if (n.Contains("delete") || n.Contains("remove") || n.Contains("rm_")) return "delete";
-        if (n.Contains("read")   || n.Contains("view")   || n.Contains("cat_")
-            || n.Contains("get_content"))                            return "read";
-        if (n.Contains("shell")     || n.Contains("bash")
+        if (n.Contains("read") || n.Contains("view") || n.Contains("cat_")
+            || n.Contains("get_content")) return "read";
+        if (n.Contains("shell") || n.Contains("bash")
             || n.Contains("powershell") || n.Contains("terminal")
-            || n.Contains("execute")    || n.Contains("run_in")
-            || n.Contains("exec_")      || n.Contains("invoke"))     return "run";
+            || n.Contains("execute") || n.Contains("run_in")
+            || n.Contains("exec_") || n.Contains("invoke")) return "run";
         if (n.Contains("search") || n.Contains("grep")
-            || n.Contains("find")   || n.Contains("glob"))           return "search";
+            || n.Contains("find") || n.Contains("glob")) return "search";
         if (n.Contains("fetch") || n.Contains("http") || n.Contains("url")
-            || n.Contains("download"))                                return "fetch";
-        if (n.Contains("ask_user") || n.Contains("input"))           return "ask";
+            || n.Contains("download")) return "fetch";
+        if (n.Contains("ask_user") || n.Contains("input")) return "ask";
         return "other";
     }
 
     private static string FormatCategory(string cat, int n) => cat switch
     {
-        "edit"   => $"Edited {n} file{(n == 1 ? "" : "s")}",
+        "edit" => $"Edited {n} file{(n == 1 ? "" : "s")}",
         "delete" => $"Deleted {n} file{(n == 1 ? "" : "s")}",
-        "read"   => $"Read {n} file{(n == 1 ? "" : "s")}",
-        "run"    => $"Ran {n} command{(n == 1 ? "" : "s")}",
+        "read" => $"Read {n} file{(n == 1 ? "" : "s")}",
+        "run" => $"Ran {n} command{(n == 1 ? "" : "s")}",
         "search" => $"Searched {n} time{(n == 1 ? "" : "s")}",
-        "fetch"  => $"Fetched {n} URL{(n == 1 ? "" : "s")}",
-        "ask"    => $"Asked {n} question{(n == 1 ? "" : "s")}",
-        _        => $"Used {n} tool{(n == 1 ? "" : "s")}",
+        "fetch" => $"Fetched {n} URL{(n == 1 ? "" : "s")}",
+        "ask" => $"Asked {n} question{(n == 1 ? "" : "s")}",
+        _ => $"Used {n} tool{(n == 1 ? "" : "s")}",
     };
 
     // ── WebView2 JS bridge: section + thinking helpers ───────────────────────
@@ -4597,18 +4598,18 @@ public partial class MainForm : Form
                 if (_pendingCount > 0 || _mainSessionId != null)
                     AppendOutput("\r\n⚠️ Session lost — reconnecting…\r\n\r\n", AppTheme.ColorError);
 
-                _reconnecting    = true;
+                _reconnecting = true;
                 ResetSessionTrackingState();
-                _mainSessionId   = null;
+                _mainSessionId = null;
             }
             else if (status == "Not connected" && _reconnecting)
             {
                 // Automatic reconnect attempt failed.
                 AppendOutput("\r\n❌ Session lost and reconnect failed. Open a folder to reconnect.\r\n\r\n",
                     AppTheme.ColorError);
-                _reconnecting    = false;
+                _reconnecting = false;
                 ResetSessionTrackingState();
-                _mainSessionId   = null;
+                _mainSessionId = null;
             }
 
             toolStripStatusLabelConnection.Text = status;
@@ -4677,8 +4678,8 @@ public partial class MainForm : Form
     /// </summary>
     private void ShowFloatingDialog(Form dialog)
     {
-        dialog.Owner    = this;
-        dialog.TopMost  = true;
+        dialog.Owner = this;
+        dialog.TopMost = true;
         dialog.ShowInTaskbar = false;
         dialog.FormClosed += (_, _) => dialog.Dispose();
         dialog.Show(this);
@@ -4771,5 +4772,10 @@ public partial class MainForm : Form
         _subAgentWatchdog.Stop();
         _subAgentWatchdog.Dispose();
         _ = _copilot.DisposeAsync().AsTask();
+    }
+
+    private void webViewOutput_Click(object sender, EventArgs e)
+    {
+
     }
 }
