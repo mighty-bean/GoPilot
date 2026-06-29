@@ -20,6 +20,7 @@ A Windows desktop GUI for the [GitHub Copilot SDK](libs/copilot-sdk). GoPilot wr
 - Plan, Autopilot, and Fleet modes alongside Standard chat.
 - Tool permission dialog with Allow / Approve Similar / Deny, plus an Auto-approve toggle.
 - Caveman Mode: optional client-side prompt compression to cut tokens.
+- Local LLM filter: optional offline codellama pre-pass that minimizes prompts and answers simple requests locally to save cloud tokens.
 - All option toggles show as badges on the Options button in a fixed order; enabled options appear in full colour and disabled options are greyed out.
 - Sending while a turn is in flight interrupts it instead of queueing.
 - Dark theme throughout.
@@ -95,6 +96,7 @@ Model, Mode, Effort, Fleet, and Auto-approve are persisted to `gopilot.ini` unde
 | ⚠️ Auto-approve tools | Off | Skip the permission dialog. |
 | 👥 Fleet mode | Off | Spawn parallel sub-agents on large tasks. Toggling triggers a summary-and-restart handoff on next send. |
 | 🦴 Caveman Mode | Off | Compress prompts client-side. See [Caveman Mode](#caveman-mode). |
+| 🧠 Local LLM filter | Off | Route prompts through a local codellama model first. See [Local LLM Filter](#local-llm-filter). |
 | 💬 Show Working Steps | Off | Keep Reasoning and Tool sections expanded after they finish. |
 
 ### Prompt box
@@ -187,6 +189,17 @@ When on, GoPilot rewrites each outgoing prompt into a token-minimal form before 
 After each send a discreet meta line reports the before/after character count. Typical prose savings are 10-20%. Code-heavy prompts will see little or none.
 
 Toggling Caveman mid-session sends a single `CAVEMAN MODE ON.` or `CAVEMAN MODE OFF.` side instruction so the model switches style on its next reply without a session restart. The setting is persisted in `gopilot.ini` under `[Caveman]`.
+
+## Local LLM Filter
+
+An optional offline pre-processor (powered by [OllamaSharp](https://github.com/awaescher/OllamaSharp)) that sits between you and the cloud model to cut token spend:
+
+- **Minimize:** every prompt is rewritten to the fewest tokens that preserve intent (code, paths, and names kept verbatim) before being forwarded to the cloud.
+- **Answer locally:** when the local model is confident enough (default threshold 0.85) it answers directly and the cloud is skipped entirely - zero cloud tokens, zero AIC.
+
+GoPilot auto-detects dedicated VRAM (via `nvidia-smi`, falling back to the registry) and picks a fitting model: `codellama:7b-instruct` (~8GB), `codellama:13b-instruct` (~16GB), or `codellama:34b-instruct` (24GB+). The cloud always receives the original prompt if the filter is off, unavailable, or errors.
+
+Requires [Ollama](https://ollama.com) running locally with the chosen model pulled (e.g. `ollama pull codellama:13b-instruct`). Settings persist in `gopilot.ini` under `[LocalFilter]` (`Enabled`, `Endpoint`, `Model`, `Threshold`); leave `Model` blank for VRAM-based auto-selection.
 
 ## Tool Permission Dialog
 

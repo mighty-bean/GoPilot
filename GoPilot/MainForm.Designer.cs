@@ -55,6 +55,7 @@ partial class MainForm
         menuOptionFleet = new ToolStripMenuItem();
         menuSessionCaveman = new ToolStripMenuItem();
         menuSessionShowSteps = new ToolStripMenuItem();
+        menuOptionLocalFilter = new ToolStripMenuItem();
         menuStripMain = new MenuStrip();
         menuSession = new ToolStripMenuItem();
         menuSessionNew = new ToolStripMenuItem();
@@ -454,7 +455,7 @@ partial class MainForm
         contextMenuOptions.BackColor = Color.FromArgb(56, 56, 56);
         contextMenuOptions.ForeColor = Color.FromArgb(218, 218, 218);
         contextMenuOptions.ImageScalingSize = new Size(32, 32);
-        contextMenuOptions.Items.AddRange(new ToolStripItem[] { menuOptionAutoApprove, menuOptionFleet, menuSessionCaveman, menuSessionShowSteps });
+        contextMenuOptions.Items.AddRange(new ToolStripItem[] { menuOptionAutoApprove, menuOptionFleet, menuSessionCaveman, menuOptionLocalFilter, menuSessionShowSteps });
         contextMenuOptions.Name = "contextMenuOptions";
         contextMenuOptions.Size = new Size(183, 92);
         // 
@@ -487,6 +488,16 @@ partial class MainForm
         menuSessionCaveman.Size = new Size(182, 22);
         menuSessionCaveman.Text = "Ca&veman Mode";
         menuSessionCaveman.ToolTipText = "Reduce each prompt to caveman speak before sending. Saves tokens; may lose nuance.";
+        // 
+        // menuOptionLocalFilter
+        // 
+        menuOptionLocalFilter.BackColor = Color.FromArgb(56, 56, 56);
+        menuOptionLocalFilter.CheckOnClick = true;
+        menuOptionLocalFilter.ForeColor = Color.FromArgb(218, 218, 218);
+        menuOptionLocalFilter.Name = "menuOptionLocalFilter";
+        menuOptionLocalFilter.Size = new Size(182, 22);
+        menuOptionLocalFilter.Text = "&Local LLM filter";
+        menuOptionLocalFilter.ToolTipText = "Pre-process prompts with a local codellama model: answer simple requests directly, otherwise minimize tokens before sending to the cloud.";
         // 
         // menuSessionShowSteps
         // 
@@ -905,6 +916,7 @@ partial class MainForm
     private System.Windows.Forms.ToolStripMenuItem menuSessionRefreshFresh;
     private System.Windows.Forms.ToolStripMenuItem menuSessionCaveman;
     private System.Windows.Forms.ToolStripMenuItem menuSessionShowSteps;
+    private System.Windows.Forms.ToolStripMenuItem menuOptionLocalFilter;
     private System.Windows.Forms.ToolStripMenuItem menuSessionPast;
     private System.Windows.Forms.ToolStripMenuItem menuHelp;
     private System.Windows.Forms.ToolStripMenuItem menuHelpShow;

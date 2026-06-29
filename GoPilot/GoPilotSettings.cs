@@ -70,6 +70,23 @@ internal sealed class GoPilotSettings
 	public bool DetailsDefaultOpen { get; set; }
 
 	/// <summary>
+	/// When true, every user prompt is first sent to a local Ollama model that
+	/// either answers directly (when confident) or rewrites the prompt to the
+	/// fewest tokens before forwarding to the cloud. Persisted under
+	/// <c>[LocalFilter]</c>.
+	/// </summary>
+	public bool LocalFilterEnabled { get; set; }
+
+	/// <summary>Ollama HTTP endpoint. Persisted as <c>Endpoint=</c>.</summary>
+	public string LocalFilterEndpoint { get; set; } = "http://localhost:11434";
+
+	/// <summary>Codellama model id; empty means auto-select from detected VRAM. Persisted as <c>Model=</c>.</summary>
+	public string LocalFilterModel { get; set; } = string.Empty;
+
+	/// <summary>Confidence required for the local model to answer directly (0..1). Persisted as <c>Threshold=</c>.</summary>
+	public double LocalFilterThreshold { get; set; } = 0.85;
+
+	/// <summary>
 	/// Last selected model id (e.g. <c>claude-opus-4.6</c>). Empty when no
 	/// preference has been recorded yet; in that case
 	/// <see cref="MainForm.PopulateModelsAsync"/> falls back to its
@@ -172,6 +189,20 @@ internal sealed class GoPilotSettings
 				{
 					settings.DetailsDefaultOpen = ParseBool(val);
 				}
+				else if (section == "localfilter")
+				{
+					switch (key)
+					{
+						case "enabled":   settings.LocalFilterEnabled  = ParseBool(val); break;
+						case "endpoint":  settings.LocalFilterEndpoint = val;            break;
+						case "model":     settings.LocalFilterModel    = val;            break;
+						case "threshold":
+							if (double.TryParse(val, System.Globalization.NumberStyles.Any,
+									System.Globalization.CultureInfo.InvariantCulture, out var th))
+								settings.LocalFilterThreshold = th;
+							break;
+					}
+				}
 				else if (section == "session")
 				{
 					switch (key)
@@ -232,6 +263,12 @@ internal sealed class GoPilotSettings
 
 		sb.Append("\r\n[UI]\r\n");
 		sb.Append($"DetailsDefaultOpen={(DetailsDefaultOpen ? "true" : "false")}\r\n");
+
+		sb.Append("\r\n[LocalFilter]\r\n");
+		sb.Append($"Enabled={(LocalFilterEnabled ? "true" : "false")}\r\n");
+		sb.Append($"Endpoint={LocalFilterEndpoint}\r\n");
+		sb.Append($"Model={LocalFilterModel}\r\n");
+		sb.Append($"Threshold={LocalFilterThreshold.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}\r\n");
 
 		sb.Append("\r\n[Session]\r\n");
 		sb.Append($"Model={LastModel}\r\n");

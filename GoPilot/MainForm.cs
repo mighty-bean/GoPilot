@@ -27,6 +27,7 @@ public partial class MainForm : Form
         }
     }
     private readonly CopilotService _copilot = new();
+    private readonly LocalFilterService _localFilter = new();
     private readonly PromptHistory _promptHistory = new();
     private readonly List<string> _attachments = new();
     private readonly HashSet<string> _streamingSessions = new();
@@ -129,6 +130,13 @@ public partial class MainForm : Form
         _copilot.CavemanMode = _settings.CavemanMode;
         menuSessionCaveman.Checked = _settings.CavemanMode;
         menuSessionShowSteps.Checked = _settings.DetailsDefaultOpen;
+        // Local LLM filter: restore toggle/config and bring the model online in
+        // the background so the first send is not blocked on detection/pull.
+        _localFilter.Endpoint  = _settings.LocalFilterEndpoint;
+        _localFilter.Model     = _settings.LocalFilterModel;
+        _localFilter.Threshold = _settings.LocalFilterThreshold;
+        _localFilter.Enabled   = _settings.LocalFilterEnabled;
+        menuOptionLocalFilter.Checked = _settings.LocalFilterEnabled;
         // Restore the last-used Auto-approve / Fleet toggles before the mode
         // combo is populated so ApplyModeChangeAsync's "Autopilot implies
         // auto-approve" rule sees the correct starting state. The CheckedChanged
@@ -261,6 +269,15 @@ public partial class MainForm : Form
             // Affects newly-emitted sections only; existing closed/open sections
             // are not retroactively reopened or recollapsed.
         };
+        menuOptionLocalFilter.CheckedChanged += async (_, _) =>
+        {
+            var enabled = menuOptionLocalFilter.Checked;
+            _localFilter.Enabled = enabled;
+            _settings.LocalFilterEnabled = enabled;
+            try { _settings.Save(); } catch { /* best-effort persist */ }
+            if (enabled)
+                await InitLocalFilterAsync();
+        };
         menuToolsExplorer.Click += (_, _) => OpenExplorer();
         menuToolsVSCode.Click += (_, _) => OpenVSCode();
         menuToolsSkillTree.Click += (_, _) => EditSkillTree();
@@ -381,6 +398,29 @@ public partial class MainForm : Form
         toolStripStatusLabelAic.ToolTipText = string.IsNullOrEmpty(args.Display)
             ? $"{args.AicUsed.Value:0.##########} AI Credits used this session"
             : args.Display;
+    }
+
+    /// <summary>
+    /// Brings the local LLM filter online (VRAM detection, model selection,
+    /// Ollama reachability + model presence) on a background thread, then
+    /// reports the outcome in the output panel. Best-effort: failures leave the
+    /// toggle on but the filter inert, so prompts still reach the cloud.
+    /// </summary>
+    private async Task InitLocalFilterAsync()
+    {
+        try
+        {
+            await Task.Run(() => _localFilter.InitializeAsync());
+            // Persist the auto-selected model so the next launch reuses it.
+            _settings.LocalFilterModel = _localFilter.Model;
+            try { _settings.Save(); } catch { /* best-effort persist */ }
+            var color = _localFilter.Available ? AppTheme.ColorMeta : AppTheme.ColorError;
+            AppendOutput($"\U0001f9e0 Local filter: {_localFilter.StatusReason}\r\n\r\n", color);
+        }
+        catch (Exception ex)
+        {
+            AppendOutput($"\U0001f9e0 Local filter init failed: {ex.Message}\r\n\r\n", AppTheme.ColorError);
+        }
     }
 
     private async Task InitializeWebViewAsync()
@@ -1022,6 +1062,25 @@ public partial class MainForm : Form
         }
         richTextBoxPrompt.Clear();
 
+        // Local LLM filter: answer simple requests outright (skipping the cloud)
+        // or rewrite the prompt to the fewest tokens before forwarding. Bypassed
+        // when off/unavailable, so the cloud always receives the original prompt.
+        string? localMeta = null;
+        if (_localFilter.Enabled && _localFilter.Available && !string.IsNullOrEmpty(prompt))
+        {
+            var r = await _localFilter.ProcessAsync(prompt);
+            if (r.Mode == LocalFilterMode.Answered)
+            {
+                EchoLocalAnswer(prompt, r);
+                return;
+            }
+            if (r.Mode == LocalFilterMode.Minimized && !string.IsNullOrWhiteSpace(r.Prompt))
+            {
+                prompt = r.Prompt;
+                localMeta = $"\U0001f9e0 Local ({r.ModelLabel}) conf {r.Confidence:0.00}: minimized {r.OriginalChars} -> {r.FinalChars} chars, forwarding to cloud";
+            }
+        }
+
         (int OriginalChars, int CavemanChars)? cavemanStats = null;
         if (menuSessionCaveman.Checked && !string.IsNullOrEmpty(prompt))
         {
@@ -1032,7 +1091,45 @@ public partial class MainForm : Form
                 cavemanStats = (originalChars, cavemanChars);
         }
 
+        if (localMeta != null)
+            AppendOutput(localMeta + "\r\n\r\n", AppTheme.ColorMeta);
+
         await DispatchPromptAsync(prompt, pastedImages, cavemanStats);
+    }
+
+    /// <summary>
+    /// Renders a locally-resolved answer (cloud skipped) into both output tabs:
+    /// the user echo, a meta line noting model + confidence, and the answer as a
+    /// Markdown assistant block. No tokens are spent on the cloud LLM.
+    /// </summary>
+    private void EchoLocalAnswer(string prompt, LocalFilterResult r)
+    {
+        if (_mainSessionId != null)
+            SetSessionDescriptionIfEmpty(_mainSessionId, prompt);
+
+        AppendRaw($"\U0001f464 You: {prompt}\r\n\r\n", AppTheme.ColorUser);
+        var userBlock = new OutputBlock(BlockKind.User)
+        {
+            Label = "\U0001f464 You:",
+            Content = prompt,
+            IsComplete = true
+        };
+        _outputBlocks.Add(userBlock);
+        WebViewAppendBlock(userBlock);
+
+        AppendOutput(
+            $"\U0001f9e0 Local ({r.ModelLabel}) conf {r.Confidence:0.00}: answered locally, cloud skipped\r\n\r\n",
+            AppTheme.ColorMeta);
+
+        AppendRaw($"\U0001f9e0 Local: {r.Answer}\r\n\r\n", AppTheme.ColorAssistant);
+        var ansBlock = new OutputBlock(BlockKind.Assistant)
+        {
+            Label = "\U0001f9e0 Local:",
+            Content = r.Answer,
+            IsComplete = true
+        };
+        _outputBlocks.Add(ansBlock);
+        WebViewAppendBlock(ansBlock);
     }
 
     private async Task StopAsync()
@@ -2536,6 +2633,7 @@ public partial class MainForm : Form
     private Bitmap? _badgeAutoApprove;
     private Bitmap? _badgeFleet;
     private Bitmap? _badgeShowSteps;
+    private Bitmap? _badgeLocalFilter;
 
     // Cached ImageAttributes used to render an Options badge in the
     // "off" (greyed-out) state. Built once in InitializeOptionIcons and
@@ -2578,11 +2676,15 @@ public partial class MainForm : Form
                             ?? OptionIconRenderer.CreateSquareBadge(
                                 OptionIconRenderer.ShowStepsSquare,
                                 OptionIconRenderer.ShowStepsGlyph);
+        _badgeLocalFilter = OptionIconRenderer.CreateSquareBadge(
+                                OptionIconRenderer.LocalFilterSquare,
+                                OptionIconRenderer.LocalFilterGlyph);
 
         menuSessionCaveman.Image = _badgeCaveman;
         menuOptionAutoApprove.Image = _badgeAutoApprove;
         menuOptionFleet.Image = _badgeFleet;
         menuSessionShowSteps.Image = _badgeShowSteps;
+        menuOptionLocalFilter.Image = _badgeLocalFilter;
 
         // Show the 18x18 badges at their native size in the menu margin
         // instead of letting WinForms downscale them to the default 16x16.
@@ -2610,6 +2712,7 @@ public partial class MainForm : Form
         menuOptionFleet.CheckedChanged += (_, _) => buttonOptions.Invalidate();
         menuSessionCaveman.CheckedChanged += (_, _) => buttonOptions.Invalidate();
         menuSessionShowSteps.CheckedChanged += (_, _) => buttonOptions.Invalidate();
+        menuOptionLocalFilter.CheckedChanged += (_, _) => buttonOptions.Invalidate();
 
         // Clear the design-time caption so our Paint handler owns the entire
         // button surface (otherwise the base button paints "⚙ Options ▾" and
@@ -2649,6 +2752,7 @@ public partial class MainForm : Form
         if (_badgeFleet != null) badges.Add((_badgeFleet, menuOptionFleet.Checked));
         if (_badgeCaveman != null) badges.Add((_badgeCaveman, menuSessionCaveman.Checked));
         if (_badgeShowSteps != null) badges.Add((_badgeShowSteps, menuSessionShowSteps.Checked));
+        if (_badgeLocalFilter != null) badges.Add((_badgeLocalFilter, menuOptionLocalFilter.Checked));
 
         var fmt = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix
                 | TextFormatFlags.SingleLine;

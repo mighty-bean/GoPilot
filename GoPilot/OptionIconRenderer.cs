@@ -29,6 +29,9 @@ internal static class OptionIconRenderer
     public const string CavemanResource     = "GoPilot.bone.png";
     public const string ShowStepsResource   = "GoPilot.speechballoon.png";
 
+    public static readonly Color LocalFilterSquare = Color.FromArgb(150, 110, 210);
+    public const string LocalFilterGlyph = "\U0001F9E0";
+
     // Colours used only when the embedded PNG cannot be loaded.
     public static readonly Color AutoApproveSquare = Color.FromArgb(215,  75,  75);
     public static readonly Color FleetSquare       = Color.FromArgb(100, 160, 220);
