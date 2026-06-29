@@ -132,6 +132,10 @@ public sealed class CopilotService : IAsyncDisposable
     // window the model just consumed) and the active model's prompt-token ceiling.
     private double _currentInputTokens     = 0;
     private double _currentMaxPromptTokens = 0;
+    // Running session cost in nano-AIU (1 AIC = 1e9 nano-AIU = 0.01 USD), summed
+    // across every API call in the session including sub-agents. Reset on new/
+    // restarted sessions; preserved through in-place compaction.
+    private double _sessionAicNano = 0;
     // Cache of per-model prompt-token limits, populated by ListModelsAsync.
     private readonly Dictionary<string, double> _modelPromptLimits =
         new(StringComparer.OrdinalIgnoreCase);
@@ -148,6 +152,21 @@ public sealed class CopilotService : IAsyncDisposable
 
     public double CurrentInputTokens     => _currentInputTokens;
     public double CurrentMaxPromptTokens => _currentMaxPromptTokens;
+    // Cumulative session cost expressed in AIC (AI Credits).
+    public double CurrentSessionAic      => _sessionAicNano / 1_000_000_000.0;
+
+    // Zero the session cost meter and notify the UI. Called whenever a brand-new
+    // main session is created (new/fresh/restarted/resumed); cost is otherwise
+    // preserved across in-place compaction since the session ID is unchanged.
+    private void ResetSessionAicTotal()
+    {
+        _sessionAicNano = 0;
+        AicUsageChanged?.Invoke(this, new AicUsageEventArgs
+        {
+            SessionId = _mainSession?.SessionId ?? "",
+            AicUsed   = 0,
+        });
+    }
 
     public string ActiveModel { get; set; } = "claude-sonnet-4.6";
     private string _activeMode = "Standard";
@@ -889,6 +908,7 @@ public sealed class CopilotService : IAsyncDisposable
         }
         _approvedKinds.Clear();
         _currentInputTokens = 0;
+        ResetSessionAicTotal();
 
         var agents    = LoadTierAgents();
         var skillDirs = LoadTierSkillDirectories();
@@ -1846,6 +1866,7 @@ public sealed class CopilotService : IAsyncDisposable
         }
         _approvedKinds.Clear();
         _currentInputTokens = 0;
+        ResetSessionAicTotal();
     }
 
     /// <summary>
@@ -2113,6 +2134,23 @@ public sealed class CopilotService : IAsyncDisposable
                 break;
 
             case AssistantUsageEvent usage:
+                // Accumulate the session cost (AIC) from every API call, including
+                // sub-agents, so the status bar shows the true total spend. The SDK
+                // reports per-call cost as copilotUsage.totalNanoAiu (1 AIC = 1e9
+                // nano-AIU). This runs for every session, independent of the
+                // main-session/user-initiated gate used by the context meter below.
+                if (usage.Data.CopilotUsage != null
+                    && usage.Data.CopilotUsage.TotalNanoAiu > 0)
+                {
+                    _sessionAicNano += usage.Data.CopilotUsage.TotalNanoAiu;
+                    AicUsageChanged?.Invoke(this, new AicUsageEventArgs
+                    {
+                        SessionId = sessionId ?? "",
+                        AicUsed   = _sessionAicNano / 1_000_000_000.0,
+                        Display   = $"{_sessionAicNano:0} nano-AIU spent this session",
+                    });
+                }
+
                 // Update the context-window meter from the main user-driven flow only:
                 // ignore sub-agents (ParentToolCallId set) and non-user initiators
                 // (e.g. "sub-agent", "mcp-sampling").  The SDK schema documents
@@ -2158,88 +2196,6 @@ public sealed class CopilotService : IAsyncDisposable
                             catch { }
                         });
                     }
-
-                    // Try to extract an authoritative AIC value from the SDK event payload
-                    try
-                    {
-                        var data = usage.Data;
-                        double? aic = null;
-                        if (data != null)
-                        {
-                            var t = data.GetType();
-                            // common property name guesses from different SDK/CLI versions
-                            foreach (var propName in new[] { "AicUsed", "AIC", "Aic", "AicTokens", "AicSpent", "AicAmount", "Cost", "Consumption" })
-                            {
-                                var prop = t.GetProperty(propName, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase);
-                                if (prop == null) continue;
-                                var val = prop.GetValue(data);
-                                if (val == null) continue;
-                                switch (val)
-                                {
-                                    case double d: aic = d; break;
-                                    case float f: aic = f; break;
-                                    case decimal dec: aic = (double)dec; break;
-                                    case long l: aic = l; break;
-                                    case int i: aic = i; break;
-                                    case string s when double.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var pd): aic = pd; break;
-                                }
-                                if (aic.HasValue) break;
-                            }
-
-                            // If not found, some SDK builds embed a copilotUsage object with totalNanoAiu
-                            if (!aic.HasValue)
-                            {
-                                var cuProp = t.GetProperty("copilotUsage", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase);
-                                if (cuProp != null)
-                                {
-                                    var cu = cuProp.GetValue(data);
-                                    if (cu != null)
-                                    {
-                                        var ctype = cu.GetType();
-                                        var candidates = new[] { "totalNanoAiu", "totalNanoAIU", "total_nano_aiu" };
-                                        foreach (var c in candidates)
-                                        {
-                                            var p = ctype.GetProperty(c, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase);
-                                            if (p == null) continue;
-                                            var v = p.GetValue(cu);
-                                            if (v == null) continue;
-                                            double rawNano = 0;
-                                            switch (v)
-                                            {
-                                                case long ll: rawNano = ll; break;
-                                                case int ii: rawNano = ii; break;
-                                                case double dd: rawNano = dd; break;
-                                                case string ss when double.TryParse(ss, NumberStyles.Any, CultureInfo.InvariantCulture, out var px): rawNano = px; break;
-                                            }
-                                            if (rawNano > 0)
-                                            {
-                                                // Convert nanounits to standard AIC by dividing by 1e9
-                                                aic = rawNano / 1_000_000_000.0;
-                                                // Preserve a display string showing raw value
-                                                AicUsageChanged?.Invoke(this, new AicUsageEventArgs
-                                                {
-                                                    SessionId = sessionId ?? "",
-                                                    AicUsed = aic.Value,
-                                                    Display = $"{c}={rawNano} (nano)"
-                                                });
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        if (aic.HasValue)
-                        {
-                            AicUsageChanged?.Invoke(this, new AicUsageEventArgs
-                            {
-                                SessionId = sessionId ?? "",
-                                AicUsed = aic.Value,
-                            });
-                        }
-                    }
-                    catch { /* best-effort; don't let parsing errors bubble */ }
                 }
                 break;
 
@@ -2259,21 +2215,12 @@ public sealed class CopilotService : IAsyncDisposable
                 when sessionId == _mainSession?.SessionId
                   && !string.IsNullOrEmpty(infoAic.Data.InfoType)
                   && infoAic.Data.InfoType.IndexOf("aic", StringComparison.OrdinalIgnoreCase) >= 0:
-                try
+                MessageReceived?.Invoke(this, new SessionMessageEventArgs
                 {
-                    var msg = infoAic.Data.Message ?? "";
-                    var m = Regex.Match(msg, @"([0-9]+(?:\.[0-9]+)?)");
-                    if (m.Success && double.TryParse(m.Groups[1].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var val))
-                    {
-                        AicUsageChanged?.Invoke(this, new AicUsageEventArgs
-                        {
-                            SessionId = sessionId,
-                            AicUsed = val,
-                            Display = msg,
-                        });
-                    }
-                }
-                catch { }
+                    SessionId = sessionId,
+                    Content   = infoAic.Data.Message ?? "",
+                    Kind      = MessageKind.Status,
+                });
                 break;
         }
     }

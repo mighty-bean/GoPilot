@@ -367,18 +367,20 @@ public partial class MainForm : Form
 
     private void OnAicUsageChanged(AicUsageEventArgs args)
     {
-        if (args == null || args.AicUsed == null)
+        if (args == null || args.AicUsed == null || args.AicUsed.Value <= 0)
         {
             toolStripStatusLabelAic.Text = "";
             toolStripStatusLabelAic.ToolTipText = "";
             return;
         }
 
-        // Display as a compact decimal using invariant culture. If the service
-        // provided a human-friendly Display string, attach it as a tooltip.
+        // Cumulative AI Credits spent this session. Show two-decimal precision and
+        // expose the raw nano-AIU breakdown via the tooltip.
         var s = args.AicUsed.Value.ToString("0.##", CultureInfo.InvariantCulture);
         toolStripStatusLabelAic.Text = $"AIC: {s}";
-        toolStripStatusLabelAic.ToolTipText = args.Display ?? "";
+        toolStripStatusLabelAic.ToolTipText = string.IsNullOrEmpty(args.Display)
+            ? $"{args.AicUsed.Value:0.##########} AI Credits used this session"
+            : args.Display;
     }
 
     private async Task InitializeWebViewAsync()
