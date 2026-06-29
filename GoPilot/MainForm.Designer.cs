@@ -93,6 +93,7 @@ partial class MainForm
         toolStripStatusLabelAgentStatus = new ToolStripStatusLabel();
         toolStripProgressBarContext = new ToolStripProgressBar();
         toolStripStatusLabelContext = new ToolStripStatusLabel();
+        toolStripStatusLabelAic = new ToolStripStatusLabel();
         toolStripStatusLabelSession = new ToolStripStatusLabel();
         toolTipMain = new ToolTip(components);
         ((System.ComponentModel.ISupportInitialize)splitContainerMain).BeginInit();
@@ -427,7 +428,7 @@ partial class MainForm
         tabPageRaw.Location = new Point(4, 24);
         tabPageRaw.Margin = new Padding(3, 2, 3, 2);
         tabPageRaw.Name = "tabPageRaw";
-        tabPageRaw.Size = new Size(917, 279);
+        tabPageRaw.Size = new Size(917, 288);
         tabPageRaw.TabIndex = 1;
         tabPageRaw.Text = "Raw";
         // 
@@ -444,7 +445,7 @@ partial class MainForm
         richTextBoxOutput.Name = "richTextBoxOutput";
         richTextBoxOutput.ReadOnly = true;
         richTextBoxOutput.ScrollBars = RichTextBoxScrollBars.Vertical;
-        richTextBoxOutput.Size = new Size(917, 279);
+        richTextBoxOutput.Size = new Size(917, 288);
         richTextBoxOutput.TabIndex = 0;
         richTextBoxOutput.Text = "";
         // 
@@ -772,7 +773,7 @@ partial class MainForm
         // 
         statusStrip.BackColor = Color.FromArgb(56, 56, 56);
         statusStrip.ImageScalingSize = new Size(20, 20);
-        statusStrip.Items.AddRange(new ToolStripItem[] { toolStripStatusLabelConnection, toolStripStatusLabelVersion, toolStripStatusLabelSep, toolStripStatusLabelAgentStatus, toolStripProgressBarContext, toolStripStatusLabelContext, toolStripStatusLabelSession });
+        statusStrip.Items.AddRange(new ToolStripItem[] { toolStripStatusLabelConnection, toolStripStatusLabelVersion, toolStripStatusLabelSep, toolStripStatusLabelAgentStatus, toolStripProgressBarContext, toolStripStatusLabelContext, toolStripStatusLabelAic, toolStripStatusLabelSession });
         statusStrip.Location = new Point(0, 594);
         statusStrip.Name = "statusStrip";
         statusStrip.Size = new Size(940, 23);
@@ -800,11 +801,12 @@ partial class MainForm
         // 
         // toolStripStatusLabelAgentStatus
         // 
+        toolStripStatusLabelAgentStatus.AutoSize = false;
         toolStripStatusLabelAgentStatus.ForeColor = Color.FromArgb(200, 200, 200);
         toolStripStatusLabelAgentStatus.Name = "toolStripStatusLabelAgentStatus";
-        toolStripStatusLabelAgentStatus.Size = new Size(727, 18);
-        toolStripStatusLabelAgentStatus.Spring = true;
+        toolStripStatusLabelAgentStatus.Size = new Size(320, 18);
         toolStripStatusLabelAgentStatus.Text = "Ready for next command";
+        toolStripStatusLabelAgentStatus.TextAlign = ContentAlignment.MiddleLeft;
         // 
         // toolStripProgressBarContext
         // 
@@ -821,6 +823,13 @@ partial class MainForm
         toolStripStatusLabelContext.Name = "toolStripStatusLabelContext";
         toolStripStatusLabelContext.Padding = new Padding(8, 0, 8, 0);
         toolStripStatusLabelContext.Size = new Size(16, 18);
+        // 
+        // toolStripStatusLabelAic
+        // 
+        toolStripStatusLabelAic.ForeColor = Color.FromArgb(148, 148, 148);
+        toolStripStatusLabelAic.Name = "toolStripStatusLabelAic";
+        toolStripStatusLabelAic.Padding = new Padding(8, 0, 8, 0);
+        toolStripStatusLabelAic.Size = new Size(16, 18);
         // 
         // toolStripStatusLabelSession
         // 
@@ -934,6 +943,7 @@ partial class MainForm
     private System.Windows.Forms.ToolStripStatusLabel toolStripStatusLabelAgentStatus;
     private System.Windows.Forms.ToolStripProgressBar toolStripProgressBarContext;
     private System.Windows.Forms.ToolStripStatusLabel toolStripStatusLabelContext;
+    private System.Windows.Forms.ToolStripStatusLabel toolStripStatusLabelAic;
     private System.Windows.Forms.ToolStripStatusLabel toolStripStatusLabelSession;
     private System.Windows.Forms.ToolTip toolTipMain;
 }

@@ -2,6 +2,7 @@ namespace GoPilot;
 
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Globalization;
 using GitHub.Copilot;
 using GitHub.Copilot.Rpc;
 
@@ -109,6 +110,7 @@ public partial class MainForm : Form
     private string? _activeThinkingId;
     private int _nextThinkingId = 0;
 
+    private bool bIsFreeTierAutoOnly = false;
 
     private readonly string? _startupFolder;
 
@@ -347,6 +349,10 @@ public partial class MainForm : Form
 
         _copilot.ContextUsageChanged += (_, args) =>
             InvokeOnUI(() => OnContextUsageChanged(args));
+
+        // AIC usage updates from the Copilot SDK/CLI (authoritative when present)
+        _copilot.AicUsageChanged += (_, args) =>
+            InvokeOnUI(() => OnAicUsageChanged(args));
     }
 
     private void InvokeOnUI(Action action)
@@ -358,6 +364,22 @@ public partial class MainForm : Form
     }
 
     // ── WebView2 initialization ──────────────────────────────────────────────
+
+    private void OnAicUsageChanged(AicUsageEventArgs args)
+    {
+        if (args == null || args.AicUsed == null)
+        {
+            toolStripStatusLabelAic.Text = "";
+            toolStripStatusLabelAic.ToolTipText = "";
+            return;
+        }
+
+        // Display as a compact decimal using invariant culture. If the service
+        // provided a human-friendly Display string, attach it as a tooltip.
+        var s = args.AicUsed.Value.ToString("0.##", CultureInfo.InvariantCulture);
+        toolStripStatusLabelAic.Text = $"AIC: {s}";
+        toolStripStatusLabelAic.ToolTipText = args.Display ?? "";
+    }
 
     private async Task InitializeWebViewAsync()
     {
@@ -847,6 +869,11 @@ public partial class MainForm : Form
     /// model, falling back to the highest-available Claude Sonnet model if no
     /// Opus model is present. Falls back to the service's current ActiveModel
     /// if the SDK returns nothing.
+    /// 
+    /// Additionally detects the special-case free-tier where the SDK advertises
+    /// only the single "auto" model. In that case hide the Effort dropdown,
+    /// prompt UI, and context-size meter, and display a "Free tier" message in
+    /// the status area so the UI does not appear broken.
     /// </summary>
     private async Task PopulateModelsAsync()
     {
@@ -859,9 +886,30 @@ public partial class MainForm : Form
         {
             if (comboBoxModel.Items.Count == 0)
             {
-                comboBoxModel.Items.Add(_copilot.ActiveModel);
+                // Prefer the last-model saved in gopilot.ini when the SDK returns nothing
+                // (e.g. not authenticated yet). Fall back to the service's ActiveModel.
+                var fallback = !string.IsNullOrWhiteSpace(_settings.LastModel)
+                    ? _settings.LastModel
+                    : _copilot.ActiveModel;
+                comboBoxModel.Items.Add(fallback);
                 comboBoxModel.SelectedIndex = 0;
             }
+
+            // Trigger a background model-list refresh so limits can arrive after startup.
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var list = await _copilot.ListModelsAsync();
+                    if (list.Count > 0)
+                    {
+                        // Invoke back to UI thread to repopulate the combo if models arrived
+                        InvokeOnUI(async () => await PopulateModelsAsync());
+                    }
+                }
+                catch { }
+            });
+
             _uiReady = true;
             return;
         }
@@ -902,6 +950,33 @@ public partial class MainForm : Form
             .FirstOrDefault() ?? 0;
 
         comboBoxModel.SelectedIndex = defaultIdx;
+
+        // If the SDK only advertised the single "auto" model, treat this as the
+        // free-tier case: hide effort and prompt UI and show a "Free tier"
+        // message in the status area so the UI doesn't look broken.
+        bIsFreeTierAutoOnly = ids.Count == 1 && string.Equals(ids[0], "auto", StringComparison.OrdinalIgnoreCase);
+        if (bIsFreeTierAutoOnly)
+        {
+            // Hide reasoning-effort controls
+            labelEffort.Visible = false;
+            comboBoxEffort.Visible = false;
+
+            // Replace context-meter with an explanatory message
+            toolStripProgressBarContext.Visible = false;
+            toolStripStatusLabelContext.Text = "Free tier";
+            toolStripStatusLabelContext.ToolTipText = "Using free Copilot tier — UI features limited";
+        }
+        else
+        {
+            // Restore the normal UI layout for non-free-tier accounts
+            labelEffort.Visible = true;
+            comboBoxEffort.Visible = true;
+
+            toolStripProgressBarContext.Visible = true;
+            toolStripStatusLabelContext.Text = string.Empty;
+            toolStripStatusLabelContext.ToolTipText = string.Empty;
+        }
+
         // The model selection above triggered RefreshEffortCombo which consumed
         // _pendingPreferredEffort. Open the gate so future user-driven changes
         // are persisted.
@@ -1495,14 +1570,24 @@ public partial class MainForm : Form
             barValue = (int)Math.Clamp(Math.Round(pct), 0, 100);
         }
 
-        toolStripStatusLabelContext.Text = text;
-        toolStripStatusLabelContext.ForeColor = color;
-        toolStripProgressBarContext.Value = barValue;
-        toolStripProgressBarContext.ForeColor = barColor;
-        toolTipMain.SetToolTip(statusStrip,
-            max > 0
-                ? $"Prompt window usage: {input:N0} / {max:N0} prompt tokens ({pct:0.0}%)\nClick \ud83d\udca4 Refresh to free space."
-                : "Prompt window usage will appear here after the first response.");
+        if (bIsFreeTierAutoOnly)
+        {
+            // Replace context-meter with an explanatory message
+            toolStripProgressBarContext.Visible = false;
+            toolStripStatusLabelContext.Text = "Free tier";
+            toolStripStatusLabelContext.ToolTipText = "Using free Copilot tier — UI features limited";
+        }
+        else
+        {
+            toolStripStatusLabelContext.Text = text;
+            toolStripStatusLabelContext.ForeColor = color;
+            toolStripProgressBarContext.Value = barValue;
+            toolStripProgressBarContext.ForeColor = barColor;
+            toolTipMain.SetToolTip(statusStrip,
+                max > 0
+                    ? $"Prompt window usage: {input:N0} / {max:N0} prompt tokens ({pct:0.0}%)\nClick \ud83d\udca4 Refresh to free space."
+                    : "Prompt window usage will appear here after the first response.");
+        }
 
         UpdateRefreshButtonAffordance(max > 0 ? pct : 0);
 
@@ -3252,7 +3337,7 @@ public partial class MainForm : Form
         WebViewAppendBlock(sessionBlock);
 
         toolStripStatusLabelSession.Text =
-            $"Session: {sessionId[..Math.Min(8, sessionId.Length)]}…";
+            $"Session: {sessionId[..Math.Min(32, sessionId.Length)]}…";
     }
 
     // ── Output rendering ─────────────────────────────────────────────────────

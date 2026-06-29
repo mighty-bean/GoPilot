@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Globalization;
 
 namespace GoPilot;
 
@@ -83,6 +85,13 @@ public sealed class ContextUsageEventArgs : EventArgs
     public double Percent => MaxPromptTokens > 0 ? (InputTokens / MaxPromptTokens) * 100.0 : 0;
 }
 
+public sealed class AicUsageEventArgs : EventArgs
+{
+    public string SessionId { get; init; } = "";
+    public double? AicUsed { get; init; }
+    public string? Display { get; init; }
+}
+
 public sealed class CopilotService : IAsyncDisposable
 {
     private CopilotClient? _client;
@@ -117,6 +126,7 @@ public sealed class CopilotService : IAsyncDisposable
     /// </summary>
     public event EventHandler<string>? SubAgentSessionEnded;
     public event EventHandler<ContextUsageEventArgs>? ContextUsageChanged;
+    public event EventHandler<AicUsageEventArgs>? AicUsageChanged;
 
     // Most recent input-token reading from the main session (size of the prompt
     // window the model just consumed) and the active model's prompt-token ceiling.
@@ -1912,6 +1922,26 @@ public sealed class CopilotService : IAsyncDisposable
 
     private void HandleSessionEvent(string sessionId, SessionEvent evt)
     {
+        // Temporary diagnostic logging: append every session event (type and Data if present)
+        try
+        {
+            var logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GoPilot");
+            Directory.CreateDirectory(logDir);
+            var logPath = Path.Combine(logDir, "events.log");
+            object? dataObj = null;
+            try { var prop = evt?.GetType().GetProperty("Data"); if (prop != null) dataObj = prop.GetValue(evt); } catch { }
+            var payload = new
+            {
+                Timestamp = DateTime.UtcNow,
+                SessionId = sessionId,
+                Event = evt?.GetType().Name,
+                Data = dataObj
+            };
+            var json = JsonSerializer.Serialize(payload);
+            File.AppendAllText(logPath, json + Environment.NewLine);
+        }
+        catch { }
+
         switch (evt)
         {
             case AssistantMessageDeltaEvent delta:
@@ -2090,7 +2120,7 @@ public sealed class CopilotService : IAsyncDisposable
                 // (observed: claude-opus-4.7) emit the literal string "user"
                 // instead, so we accept both.  Use an allow-list so any future
                 // non-user initiator type stays correctly excluded.
-                if (sessionId == _mainSession?.SessionId
+                if ((_mainSession == null || sessionId == _mainSession?.SessionId)
                     && IsUserInitiatedUsage(usage.Data.Initiator)
                     && usage.Data.InputTokens.HasValue)
                 {
@@ -2103,6 +2133,113 @@ public sealed class CopilotService : IAsyncDisposable
                         InputTokens     = _currentInputTokens,
                         MaxPromptTokens = _currentMaxPromptTokens,
                     });
+
+                    // If we don't yet have model limits, refresh the model list in the background
+                    // so the context-meter denominator can be populated shortly after startup.
+                    if (_currentMaxPromptTokens <= 0)
+                    {
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await ListModelsAsync();
+                                var newMax = LookupMaxPromptTokens(usage.Data.Model);
+                                if (newMax > 0)
+                                {
+                                    _currentMaxPromptTokens = newMax;
+                                    ContextUsageChanged?.Invoke(this, new ContextUsageEventArgs
+                                    {
+                                        SessionId = sessionId ?? "",
+                                        InputTokens = _currentInputTokens,
+                                        MaxPromptTokens = _currentMaxPromptTokens,
+                                    });
+                                }
+                            }
+                            catch { }
+                        });
+                    }
+
+                    // Try to extract an authoritative AIC value from the SDK event payload
+                    try
+                    {
+                        var data = usage.Data;
+                        double? aic = null;
+                        if (data != null)
+                        {
+                            var t = data.GetType();
+                            // common property name guesses from different SDK/CLI versions
+                            foreach (var propName in new[] { "AicUsed", "AIC", "Aic", "AicTokens", "AicSpent", "AicAmount", "Cost", "Consumption" })
+                            {
+                                var prop = t.GetProperty(propName, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase);
+                                if (prop == null) continue;
+                                var val = prop.GetValue(data);
+                                if (val == null) continue;
+                                switch (val)
+                                {
+                                    case double d: aic = d; break;
+                                    case float f: aic = f; break;
+                                    case decimal dec: aic = (double)dec; break;
+                                    case long l: aic = l; break;
+                                    case int i: aic = i; break;
+                                    case string s when double.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var pd): aic = pd; break;
+                                }
+                                if (aic.HasValue) break;
+                            }
+
+                            // If not found, some SDK builds embed a copilotUsage object with totalNanoAiu
+                            if (!aic.HasValue)
+                            {
+                                var cuProp = t.GetProperty("copilotUsage", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase);
+                                if (cuProp != null)
+                                {
+                                    var cu = cuProp.GetValue(data);
+                                    if (cu != null)
+                                    {
+                                        var ctype = cu.GetType();
+                                        var candidates = new[] { "totalNanoAiu", "totalNanoAIU", "total_nano_aiu" };
+                                        foreach (var c in candidates)
+                                        {
+                                            var p = ctype.GetProperty(c, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase);
+                                            if (p == null) continue;
+                                            var v = p.GetValue(cu);
+                                            if (v == null) continue;
+                                            double rawNano = 0;
+                                            switch (v)
+                                            {
+                                                case long ll: rawNano = ll; break;
+                                                case int ii: rawNano = ii; break;
+                                                case double dd: rawNano = dd; break;
+                                                case string ss when double.TryParse(ss, NumberStyles.Any, CultureInfo.InvariantCulture, out var px): rawNano = px; break;
+                                            }
+                                            if (rawNano > 0)
+                                            {
+                                                // Convert nanounits to standard AIC by dividing by 1e9
+                                                aic = rawNano / 1_000_000_000.0;
+                                                // Preserve a display string showing raw value
+                                                AicUsageChanged?.Invoke(this, new AicUsageEventArgs
+                                                {
+                                                    SessionId = sessionId ?? "",
+                                                    AicUsed = aic.Value,
+                                                    Display = $"{c}={rawNano} (nano)"
+                                                });
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (aic.HasValue)
+                        {
+                            AicUsageChanged?.Invoke(this, new AicUsageEventArgs
+                            {
+                                SessionId = sessionId ?? "",
+                                AicUsed = aic.Value,
+                            });
+                        }
+                    }
+                    catch { /* best-effort; don't let parsing errors bubble */ }
                 }
                 break;
 
@@ -2115,6 +2252,28 @@ public sealed class CopilotService : IAsyncDisposable
                     Content   = info.Data.Message ?? "",
                     Kind      = MessageKind.Status,
                 });
+                break;
+
+            // Some CLI/server builds may surface billing/consumption/AIC info via SessionInfoEvent
+            case SessionInfoEvent infoAic
+                when sessionId == _mainSession?.SessionId
+                  && !string.IsNullOrEmpty(infoAic.Data.InfoType)
+                  && infoAic.Data.InfoType.IndexOf("aic", StringComparison.OrdinalIgnoreCase) >= 0:
+                try
+                {
+                    var msg = infoAic.Data.Message ?? "";
+                    var m = Regex.Match(msg, @"([0-9]+(?:\.[0-9]+)?)");
+                    if (m.Success && double.TryParse(m.Groups[1].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var val))
+                    {
+                        AicUsageChanged?.Invoke(this, new AicUsageEventArgs
+                        {
+                            SessionId = sessionId,
+                            AicUsed = val,
+                            Display = msg,
+                        });
+                    }
+                }
+                catch { }
                 break;
         }
     }
