@@ -1068,7 +1068,7 @@ public partial class MainForm : Form
         string? localMeta = null;
         if (_localFilter.Enabled && _localFilter.Available && !string.IsNullOrEmpty(prompt))
         {
-            var r = await _localFilter.ProcessAsync(prompt);
+            var r = await _localFilter.ProcessAsync(prompt, CollectLocalFilterFiles(prompt));
             if (r.Mode == LocalFilterMode.Answered)
             {
                 EchoLocalAnswer(prompt, r);
@@ -1077,7 +1077,11 @@ public partial class MainForm : Form
             if (r.Mode == LocalFilterMode.Minimized && !string.IsNullOrWhiteSpace(r.Prompt))
             {
                 prompt = r.Prompt;
-                localMeta = $"\U0001f9e0 Local ({r.ModelLabel}) conf {r.Confidence:0.00}: minimized {r.OriginalChars} -> {r.FinalChars} chars, forwarding to cloud";
+                var saved = r.OriginalChars - r.FinalChars;
+                var why = string.IsNullOrEmpty(r.Note) ? "forwarding to cloud" : $"cloud needed - {r.Note}";
+                localMeta = saved > 0
+                    ? $"\U0001f9e0 Local ({r.ModelLabel}): minimized {r.OriginalChars} -> {r.FinalChars} chars (saved {saved}), {why}; concise reply requested"
+                    : $"\U0001f9e0 Local ({r.ModelLabel}): {why}; concise reply requested";
             }
         }
 
@@ -1095,6 +1099,48 @@ public partial class MainForm : Form
             AppendOutput(localMeta + "\r\n\r\n", AppTheme.ColorMeta);
 
         await DispatchPromptAsync(prompt, pastedImages, cavemanStats);
+    }
+
+    /// <summary>
+    /// Gathers small text files for the local filter so it can answer file-based
+    /// requests offline: explicit attachments plus any @relative tokens in the
+    /// prompt, resolved under the workspace. Skips binary/oversized files and
+    /// caps the total fed so codellama's context is not blown.
+    /// </summary>
+    private List<(string Name, string Content)> CollectLocalFilterFiles(string prompt)
+    {
+        const int PerFileCap = 30 * 1024;
+        const int TotalCap   = 60 * 1024;
+        var files = new List<(string, string)>();
+        var root = _copilot.WorkingDirectory;
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        int total = 0;
+
+        var candidates = new List<string>(_attachments);
+        foreach (System.Text.RegularExpressions.Match m in
+                 System.Text.RegularExpressions.Regex.Matches(prompt, @"@([^\s]+)"))
+        {
+            var rel = m.Groups[1].Value;
+            candidates.Add(!string.IsNullOrEmpty(root) ? Path.Combine(root, rel) : rel);
+        }
+
+        foreach (var path in candidates)
+        {
+            try
+            {
+                if (!File.Exists(path) || !seen.Add(path)) continue;
+                var info = new FileInfo(path);
+                if (info.Length == 0 || info.Length > PerFileCap) continue;
+                var bytes = File.ReadAllBytes(path);
+                if (Array.IndexOf(bytes, (byte)0) >= 0) continue; // skip binary
+                var text = System.Text.Encoding.UTF8.GetString(bytes);
+                if (total + text.Length > TotalCap) continue;
+                total += text.Length;
+                files.Add((Path.GetFileName(path), text));
+            }
+            catch { /* unreadable file; skip */ }
+        }
+        return files;
     }
 
     /// <summary>
@@ -1118,7 +1164,7 @@ public partial class MainForm : Form
         WebViewAppendBlock(userBlock);
 
         AppendOutput(
-            $"\U0001f9e0 Local ({r.ModelLabel}) conf {r.Confidence:0.00}: answered locally, cloud skipped\r\n\r\n",
+            $"\U0001f9e0 Local ({r.ModelLabel}) conf {r.Confidence:0.00}: answered locally, cloud skipped (saved ~{r.OriginalChars} prompt chars + cloud response)\r\n\r\n",
             AppTheme.ColorMeta);
 
         AppendRaw($"\U0001f9e0 Local: {r.Answer}\r\n\r\n", AppTheme.ColorAssistant);

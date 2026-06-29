@@ -1,10 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using OllamaSharp;
+using OllamaSharp.Models;
 
 namespace GoPilot;
 
@@ -47,6 +49,15 @@ internal sealed class LocalFilterService
 	public string Endpoint  { get; set; } = "http://localhost:11434";
 	public string Model     { get; set; } = "";   // empty => auto-selected from VRAM
 	public double Threshold { get; set; } = 0.85;
+
+	/// <summary>
+	/// Directive prepended to every forwarded prompt so the cloud model answers
+	/// tersely. Output tokens are the costliest line item, so trimming the
+	/// response saves far more AIC than trimming the prompt. Kept short and code-safe.
+	/// </summary>
+	public const string ConciseDirective =
+		"Respond concisely, directly, minimal tokens. No preamble, recap, or filler. " +
+		"Keep code, paths, and commands intact.";
 
 	public double VramGb       { get; private set; }
 	public bool   Available    { get; private set; }
@@ -95,7 +106,7 @@ internal sealed class LocalFilterService
 	/// Runs the prompt through the local model. Returns Bypassed if the filter is
 	/// off, unavailable, or anything goes wrong so the caller forwards as-is.
 	/// </summary>
-	public async Task<LocalFilterResult> ProcessAsync(string prompt, CancellationToken ct = default)
+	public async Task<LocalFilterResult> ProcessAsync(string prompt, IReadOnlyList<(string Name, string Content)>? files, CancellationToken ct = default)
 	{
 		var original = prompt?.Length ?? 0;
 		if (!Enabled || !Available || _client == null || string.IsNullOrWhiteSpace(prompt))
@@ -103,17 +114,38 @@ internal sealed class LocalFilterService
 
 		try
 		{
+			var fileBlock = new StringBuilder();
+			if (files != null)
+			{
+				foreach (var f in files)
+				{
+					fileBlock.Append("\n--- FILE: ").Append(f.Name).Append(" ---\n").Append(f.Content);
+				}
+			}
+			var hasFiles = fileBlock.Length > 0;
+
 			var instruction =
 				"You are a local pre-processor between a user and a powerful cloud LLM. " +
 				"Reply with ONLY a single JSON object, no prose, shaped: " +
 				"{\"confidence\":0.0-1.0,\"answer\":\"\",\"minimized\":\"\"}. " +
 				"If you can fully and correctly answer the request yourself, set answer to that answer and confidence to your certainty. " +
-				"If unsure or the task needs codebase/tool access, leave answer empty and set confidence low. " +
+				(hasFiles
+					? "The attached file contents are provided below; use them to answer if sufficient. "
+					: "If unsure or the task needs codebase/tool access, leave answer empty and set confidence low. ") +
 				"Always set minimized to the prompt rewritten to the fewest tokens that preserve full intent (keep code, paths, names verbatim). " +
+				(hasFiles ? "ATTACHED FILES:" + fileBlock + "\n" : "") +
 				"USER PROMPT:\n" + prompt;
 
 			var sb = new StringBuilder();
-			await foreach (var chunk in _client.GenerateAsync(instruction).WithCancellation(ct))
+			var req = new GenerateRequest
+			{
+				Model = Model,
+				Prompt = instruction,
+				Stream = true,
+				Format = "json",
+				Options = new RequestOptions { Temperature = 0f },
+			};
+			await foreach (var chunk in _client.GenerateAsync(req).WithCancellation(ct))
 				sb.Append(chunk?.Response);
 
 			var (confidence, answer, minimized) = ParseJson(sb.ToString());
@@ -132,14 +164,23 @@ internal sealed class LocalFilterService
 				};
 			}
 
+			string reason;
+			if (confidence <= 0 && string.IsNullOrWhiteSpace(answer))
+				reason = "no parseable local reply";
+			else if (string.IsNullOrWhiteSpace(answer))
+				reason = $"no local answer (conf {confidence:0.00}), needs cloud";
+			else
+				reason = $"low confidence {confidence:0.00} < {Threshold:0.00}";
+
 			return new LocalFilterResult
 			{
 				Mode = LocalFilterMode.Minimized,
-				Prompt = fwd,
+				Prompt = ConciseDirective + "\n\n" + fwd,
 				Confidence = confidence,
 				OriginalChars = original,
 				FinalChars = fwd.Length,
 				ModelLabel = Model,
+				Note = reason,
 			};
 		}
 		catch (Exception ex)

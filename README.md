@@ -194,12 +194,20 @@ Toggling Caveman mid-session sends a single `CAVEMAN MODE ON.` or `CAVEMAN MODE 
 
 An optional offline pre-processor (powered by [OllamaSharp](https://github.com/awaescher/OllamaSharp)) that sits between you and the cloud model to cut token spend:
 
-- **Minimize:** every prompt is rewritten to the fewest tokens that preserve intent (code, paths, and names kept verbatim) before being forwarded to the cloud.
+- **Minimize:** every prompt is rewritten to the fewest tokens that preserve intent (code, paths, and names kept verbatim) before being forwarded to the cloud, with a short directive telling the cloud model to answer concisely - response tokens are the costliest, so this is where most AIC is saved.
 - **Answer locally:** when the local model is confident enough (default threshold 0.85) it answers directly and the cloud is skipped entirely - zero cloud tokens, zero AIC.
 
 GoPilot auto-detects dedicated VRAM (via `nvidia-smi`, falling back to the registry) and picks a fitting model: `codellama:7b-instruct` (~8GB), `codellama:13b-instruct` (~16GB), or `codellama:34b-instruct` (24GB+). The cloud always receives the original prompt if the filter is off, unavailable, or errors.
 
-Requires [Ollama](https://ollama.com) running locally with the chosen model pulled (e.g. `ollama pull codellama:13b-instruct`). Settings persist in `gopilot.ini` under `[LocalFilter]` (`Enabled`, `Endpoint`, `Model`, `Threshold`); leave `Model` blank for VRAM-based auto-selection.
+### Setup
+
+The filter is optional. If you don't run Ollama, GoPilot ignores it and works normally - prompts go straight to the cloud, with one "unavailable" status line when toggled.
+
+1. Install Ollama from [ollama.com](https://ollama.com) and let it run (serves on `localhost:11434`).
+2. Pull a model: `ollama pull codellama:13b-instruct` (or 7b/34b to match your VRAM).
+3. Enable **Options > Local LLM filter**. When GoPilot finds the model it shows `Local filter: ready`; otherwise it bypasses and forwards your prompt unchanged.
+
+Settings persist in `gopilot.ini` under `[LocalFilter]` (`Enabled`, `Endpoint`, `Model`, `Threshold`); leave `Model` blank for VRAM-based auto-selection.
 
 ## Tool Permission Dialog
 
