@@ -20,7 +20,7 @@ A Windows desktop GUI for the [GitHub Copilot SDK](libs/copilot-sdk). GoPilot wr
 - Plan, Autopilot, and Fleet modes alongside Standard chat.
 - Tool permission dialog with Allow / Approve Similar / Deny, plus an Auto-approve toggle.
 - Caveman Mode: optional client-side prompt compression to cut tokens.
-- Local LLM filter: optional offline codellama pre-pass that minimizes prompts and answers simple requests locally to save cloud tokens.
+- **NEW** Local LLM filter: optional offline codellama pre-pass that minimizes prompts and answers simple requests locally to save cloud tokens.
 - All option toggles show as badges on the Options button in a fixed order; enabled options appear in full colour and disabled options are greyed out.
 - Sending while a turn is in flight interrupts it instead of queueing.
 - Dark theme throughout.
@@ -28,14 +28,14 @@ A Windows desktop GUI for the [GitHub Copilot SDK](libs/copilot-sdk). GoPilot wr
 
 ## Why this exists
 
-I find it difficult to work in a terminal, so I built a Windows app that makes it easier to edit prompts, save and restore session state, and launch tools at the workspace root. Think of it as an alternate front-end for Copilot CLI aimed at people who prefer standard Windows forms and editors.
-
+I find it difficult to work in a terminal, so I built a Windows app that makes it easier to edit prompts, save and restore session state, and launch tools at the workspace root. Think of it as an alternate front-end for Copilot CLI aimed at people who prefer standard Windows forms and editors. New features added regularly as I think of them :)
 
 ## Requirements
 
-- Windows 10 or later
+- Windows 11 or later
 - [.NET 8.0 Runtime](https://dotnet.microsoft.com/download/dotnet/8.0)
 - A GitHub account with Copilot access (authenticated via `gh` CLI or environment)
+- Remember: You'll need to install the Copilot CLI and run it at least once to login.
 
 ## Getting Started
 
