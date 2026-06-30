@@ -56,6 +56,7 @@ partial class MainForm
         menuSessionCaveman = new ToolStripMenuItem();
         menuSessionShowSteps = new ToolStripMenuItem();
         menuOptionLocalFilter = new ToolStripMenuItem();
+        menuOptionLocalSettings = new ToolStripMenuItem();
         menuStripMain = new MenuStrip();
         menuSession = new ToolStripMenuItem();
         menuSessionNew = new ToolStripMenuItem();
@@ -455,7 +456,7 @@ partial class MainForm
         contextMenuOptions.BackColor = Color.FromArgb(56, 56, 56);
         contextMenuOptions.ForeColor = Color.FromArgb(218, 218, 218);
         contextMenuOptions.ImageScalingSize = new Size(32, 32);
-        contextMenuOptions.Items.AddRange(new ToolStripItem[] { menuOptionAutoApprove, menuOptionFleet, menuSessionCaveman, menuOptionLocalFilter, menuSessionShowSteps });
+        contextMenuOptions.Items.AddRange(new ToolStripItem[] { menuOptionAutoApprove, menuOptionFleet, menuSessionCaveman, menuOptionLocalFilter, menuOptionLocalSettings, menuSessionShowSteps });
         contextMenuOptions.Name = "contextMenuOptions";
         contextMenuOptions.Size = new Size(183, 92);
         // 
@@ -498,6 +499,15 @@ partial class MainForm
         menuOptionLocalFilter.Size = new Size(182, 22);
         menuOptionLocalFilter.Text = "&Local LLM filter";
         menuOptionLocalFilter.ToolTipText = "Pre-process prompts with a local codellama model: answer simple requests directly, otherwise minimize tokens before sending to the cloud.";
+        // 
+        // menuOptionLocalSettings
+        // 
+        menuOptionLocalSettings.BackColor = Color.FromArgb(56, 56, 56);
+        menuOptionLocalSettings.ForeColor = Color.FromArgb(218, 218, 218);
+        menuOptionLocalSettings.Name = "menuOptionLocalSettings";
+        menuOptionLocalSettings.Size = new Size(182, 22);
+        menuOptionLocalSettings.Text = "Local LLM &settings...";
+        menuOptionLocalSettings.ToolTipText = "Choose the Ollama server (localhost or a machine on your network by host/IP), model, and answer-locally confidence threshold.";
         // 
         // menuSessionShowSteps
         // 
@@ -917,6 +927,7 @@ partial class MainForm
     private System.Windows.Forms.ToolStripMenuItem menuSessionCaveman;
     private System.Windows.Forms.ToolStripMenuItem menuSessionShowSteps;
     private System.Windows.Forms.ToolStripMenuItem menuOptionLocalFilter;
+    private System.Windows.Forms.ToolStripMenuItem menuOptionLocalSettings;
     private System.Windows.Forms.ToolStripMenuItem menuSessionPast;
     private System.Windows.Forms.ToolStripMenuItem menuHelp;
     private System.Windows.Forms.ToolStripMenuItem menuHelpShow;

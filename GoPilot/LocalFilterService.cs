@@ -76,31 +76,61 @@ internal sealed class LocalFilterService
 		try
 		{
 			VramGb = GpuDetector.DetectVramGb();
-			if (string.IsNullOrWhiteSpace(Model))
-				Model = GpuDetector.RecommendModel(VramGb);
 
 			_client = new OllamaApiClient(new Uri(Endpoint)) { SelectedModel = Model };
 
-			var models = await _client.ListLocalModelsAsync(ct);
-			var present = models.Any(m =>
-				string.Equals(m.Name, Model, StringComparison.OrdinalIgnoreCase)
-				|| m.Name.StartsWith(Model + ":", StringComparison.OrdinalIgnoreCase)
-				|| Model.StartsWith(m.Name, StringComparison.OrdinalIgnoreCase));
+			var models = (await _client.ListLocalModelsAsync(ct)).ToList();
+
+			// Auto-select a model when none is configured. The VRAM heuristic
+			// describes THIS machine, which is wrong when Endpoint points at
+			// another host on the network, so prefer a model actually installed
+			// on the target: use the VRAM-recommended id if present, else fall
+			// back to any installed codellama, else keep the recommendation so
+			// the "not installed" branch can hint at the right pull command.
+			if (string.IsNullOrWhiteSpace(Model))
+			{
+				var reco = GpuDetector.RecommendModel(VramGb);
+				if (models.Any(m => NameMatches(m.Name, reco)))
+					Model = reco;
+				else
+				{
+					var installed = models.FirstOrDefault(m =>
+						m.Name.IndexOf("codellama", StringComparison.OrdinalIgnoreCase) >= 0);
+					Model = installed?.Name ?? reco;
+				}
+				_client.SelectedModel = Model;
+			}
+
+			var host = SafeHost(Endpoint);
+			var present = models.Any(m => NameMatches(m.Name, Model));
 
 			if (!present)
 			{
-				StatusReason = $"model '{Model}' not installed (run: ollama pull {Model})";
+				StatusReason = $"model '{Model}' not installed on {host} (run: ollama pull {Model})";
 				return;
 			}
 
 			Available = true;
-			StatusReason = $"ready ({Model}, {VramGb:0.#} GB VRAM)";
+			StatusReason = $"ready ({Model} @ {host})";
 		}
 		catch (Exception ex)
 		{
 			StatusReason = $"unavailable: {ex.Message}";
 		}
 	}
+
+	/// <summary>
+	/// True when an installed model name matches the requested id, tolerating
+	/// tag suffixes in either direction (e.g. "codellama:7b" vs "codellama").
+	/// </summary>
+	private static bool NameMatches(string installed, string wanted) =>
+		string.Equals(installed, wanted, StringComparison.OrdinalIgnoreCase)
+		|| installed.StartsWith(wanted + ":", StringComparison.OrdinalIgnoreCase)
+		|| wanted.StartsWith(installed, StringComparison.OrdinalIgnoreCase);
+
+	/// <summary>Host portion of the endpoint for status display; falls back to the raw value.</summary>
+	private static string SafeHost(string endpoint) =>
+		Uri.TryCreate(endpoint, UriKind.Absolute, out var u) ? u.Host : endpoint;
 
 	/// <summary>
 	/// Runs the prompt through the local model. Returns Bypassed if the filter is
@@ -130,9 +160,11 @@ internal sealed class LocalFilterService
 				"{\"confidence\":0.0-1.0,\"answer\":\"\",\"minimized\":\"\"}. " +
 				"If you can fully and correctly answer the request yourself, set answer to that answer and confidence to your certainty. " +
 				(hasFiles
-					? "The attached file contents are provided below; use them to answer if sufficient. "
-					: "If unsure or the task needs codebase/tool access, leave answer empty and set confidence low. ") +
-				"Always set minimized to the prompt rewritten to the fewest tokens that preserve full intent (keep code, paths, names verbatim). " +
+					? "The attached file contents are provided below; use them to answer if sufficient. " 
+					: "no file atachments are included.") +
+				"If unsure or the task needs codebase/tool access or references a file or folder not provided, leave answer empty and set confidence low. " +
+				"Always Double-check your response for correctness and evidence of hallucination. Be skeptical. Set confidence value accordingly." +
+				"Always set minimized to the prompt rewritten to the fewest tokens that preserve full intent (keep code, paths, names verbatim). Be sure the minimized prompt matches the original instructions, just with fewer words" +
 				(hasFiles ? "ATTACHED FILES:" + fileBlock + "\n" : "") +
 				"USER PROMPT:\n" + prompt;
 
@@ -186,6 +218,63 @@ internal sealed class LocalFilterService
 		catch (Exception ex)
 		{
 			return new LocalFilterResult { Mode = LocalFilterMode.Bypassed, Prompt = prompt, OriginalChars = original, FinalChars = original, Note = ex.Message };
+		}
+	}
+
+	/// <summary>
+	/// Reduces and summarizes a document (e.g. a README) with the local model so
+	/// the cloud receives a compact digest instead of the full text. Unlike
+	/// <see cref="ProcessAsync"/> this never answers on the user's behalf - the
+	/// reduced document is always destined for the cloud. Best-effort: if the
+	/// filter is off, unavailable, or anything fails, returns
+	/// <see cref="LocalFilterMode.Bypassed"/> carrying the original content so the
+	/// caller forwards it unchanged.
+	/// </summary>
+	public async Task<LocalFilterResult> SummarizeAsync(string documentName, string content, CancellationToken ct = default)
+	{
+		var original = content?.Length ?? 0;
+		if (!Enabled || !Available || _client == null || string.IsNullOrWhiteSpace(content))
+			return new LocalFilterResult { Mode = LocalFilterMode.Bypassed, Prompt = content ?? "", OriginalChars = original, FinalChars = original };
+
+		try
+		{
+			var instruction =
+				"You are a local pre-processor between a user and a powerful cloud LLM. " +
+				"Reduce and summarize the document below into the shortest digest that still " +
+				"lets the cloud model understand the project: its purpose, features, architecture, " +
+				"key files, build and run commands, and configuration. " +
+				"Keep code, paths, commands, and proper names verbatim. " +
+				"Drop marketing, repetition, pleasantries, and decoration. " +
+				"Reply with ONLY the summary text, no preamble or commentary. " +
+				"DOCUMENT (" + documentName + "):\n" + content;
+
+			var sb = new StringBuilder();
+			var req = new GenerateRequest
+			{
+				Model = Model,
+				Prompt = instruction,
+				Stream = true,
+				Options = new RequestOptions { Temperature = 0f },
+			};
+			await foreach (var chunk in _client.GenerateAsync(req).WithCancellation(ct))
+				sb.Append(chunk?.Response);
+
+			var summary = sb.ToString().Trim();
+			if (string.IsNullOrWhiteSpace(summary))
+				return new LocalFilterResult { Mode = LocalFilterMode.Bypassed, Prompt = content, OriginalChars = original, FinalChars = original, Note = "empty local summary" };
+
+			return new LocalFilterResult
+			{
+				Mode = LocalFilterMode.Minimized,
+				Prompt = summary,
+				OriginalChars = original,
+				FinalChars = summary.Length,
+				ModelLabel = Model,
+			};
+		}
+		catch (Exception ex)
+		{
+			return new LocalFilterResult { Mode = LocalFilterMode.Bypassed, Prompt = content, OriginalChars = original, FinalChars = original, Note = ex.Message };
 		}
 	}
 

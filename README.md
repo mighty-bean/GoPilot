@@ -20,7 +20,7 @@ A Windows desktop GUI for the [GitHub Copilot SDK](libs/copilot-sdk). GoPilot wr
 - Plan, Autopilot, and Fleet modes alongside Standard chat.
 - Tool permission dialog with Allow / Approve Similar / Deny, plus an Auto-approve toggle.
 - Caveman Mode: optional client-side prompt compression to cut tokens.
-- **NEW** Local LLM filter: optional offline codellama pre-pass that minimizes prompts and answers simple requests locally to save cloud tokens.
+- **NEW** Local LLM filter: optional codellama pre-pass (on this machine or any Ollama host on your network) that minimizes prompts and answers simple requests locally to save cloud tokens.
 - All option toggles show as badges on the Options button in a fixed order; enabled options appear in full colour and disabled options are greyed out.
 - Sending while a turn is in flight interrupts it instead of queueing.
 - Dark theme throughout.
@@ -97,6 +97,7 @@ Model, Mode, Effort, Fleet, and Auto-approve are persisted to `gopilot.ini` unde
 | 👥 Fleet mode | Off | Spawn parallel sub-agents on large tasks. Toggling triggers a summary-and-restart handoff on next send. |
 | 🦴 Caveman Mode | Off | Compress prompts client-side. See [Caveman Mode](#caveman-mode). |
 | 🧠 Local LLM filter | Off | Route prompts through a local codellama model first. See [Local LLM Filter](#local-llm-filter). |
+| 🧠 Local LLM settings... | - | Pick the Ollama server (localhost or a network machine by host/IP), model, and confidence threshold. See [Local LLM Filter](#local-llm-filter). |
 | 💬 Show Working Steps | Off | Keep Reasoning and Tool sections expanded after they finish. |
 
 ### Prompt box
@@ -192,22 +193,36 @@ Toggling Caveman mid-session sends a single `CAVEMAN MODE ON.` or `CAVEMAN MODE 
 
 ## Local LLM Filter
 
-An optional offline pre-processor (powered by [OllamaSharp](https://github.com/awaescher/OllamaSharp)) that sits between you and the cloud model to cut token spend:
+An optional pre-processor (powered by [OllamaSharp](https://github.com/awaescher/OllamaSharp)) that sits between you and the cloud model to cut token spend. The Ollama server can run on this machine *or* on another machine on your home network:
 
 - **Minimize:** every prompt is rewritten to the fewest tokens that preserve intent (code, paths, and names kept verbatim) before being forwarded to the cloud, with a short directive telling the cloud model to answer concisely - response tokens are the costliest, so this is where most AIC is saved.
 - **Answer locally:** when the local model is confident enough (default threshold 0.85) it answers directly and the cloud is skipped entirely - zero cloud tokens, zero AIC.
 
-GoPilot auto-detects dedicated VRAM (via `nvidia-smi`, falling back to the registry) and picks a fitting model: `codellama:7b-instruct` (~8GB), `codellama:13b-instruct` (~16GB), or `codellama:34b-instruct` (24GB+). The cloud always receives the original prompt if the filter is off, unavailable, or errors.
+### Choosing the server
+
+**Options > Local LLM settings...** opens a dialog where you set:
+
+| Field | Meaning |
+|---|---|
+| Server host or IP | `localhost` for this machine, or the host name / IP of another machine on your network (e.g. `192.168.1.50`). A full `http://host:port` URL is also accepted. |
+| Port | Ollama's port (default `11434`). |
+| Model | A model installed on that server, or blank to auto-detect. |
+| Answer-locally confidence | Threshold (0.00 - 1.00) the local model must clear to answer without the cloud. |
+
+Changing the server or model re-detects against the new target immediately when the filter is on; the status line reports the chosen model and host, e.g. `Local filter: ready (codellama:13b-instruct @ 192.168.1.50)`.
+
+When **Model** is blank, GoPilot auto-detects dedicated VRAM (via `nvidia-smi`, falling back to the registry) and picks a fitting model: `codellama:7b-instruct` (~8GB), `codellama:13b-instruct` (~16GB), or `codellama:34b-instruct` (24GB+). VRAM describes *this* machine, so when the server is remote GoPilot instead prefers a codellama model already installed on that host. The cloud always receives the original prompt if the filter is off, unavailable, or errors.
 
 ### Setup
 
 The filter is optional. If you don't run Ollama, GoPilot ignores it and works normally - prompts go straight to the cloud, with one "unavailable" status line when toggled.
 
-1. Install Ollama from [ollama.com](https://ollama.com) and let it run (serves on `localhost:11434`).
-2. Pull a model: `ollama pull codellama:13b-instruct` (or 7b/34b to match your VRAM).
-3. Enable **Options > Local LLM filter**. When GoPilot finds the model it shows `Local filter: ready`; otherwise it bypasses and forwards your prompt unchanged.
+1. Install Ollama from [ollama.com](https://ollama.com) and let it run. By default it serves on `localhost:11434`; to reach it from other machines, start it with `OLLAMA_HOST=0.0.0.0:11434` and allow the port through that machine's firewall.
+2. Pull a model on the server that will run it: `ollama pull codellama:13b-instruct` (or 7b/34b to match its VRAM).
+3. If the server is on another machine, open **Options > Local LLM settings...** and enter its host/IP (and model).
+4. Enable **Options > Local LLM filter**. When GoPilot finds the model it shows `Local filter: ready`; otherwise it bypasses and forwards your prompt unchanged.
 
-Settings persist in `gopilot.ini` under `[LocalFilter]` (`Enabled`, `Endpoint`, `Model`, `Threshold`); leave `Model` blank for VRAM-based auto-selection.
+Settings persist in `gopilot.ini` under `[LocalFilter]` (`Enabled`, `Endpoint`, `Model`, `Threshold`); leave `Model` blank for auto-selection.
 
 ## Tool Permission Dialog
 

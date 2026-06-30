@@ -278,6 +278,7 @@ public partial class MainForm : Form
             if (enabled)
                 await InitLocalFilterAsync();
         };
+        menuOptionLocalSettings.Click += async (_, _) => await EditLocalFilterSettingsAsync();
         menuToolsExplorer.Click += (_, _) => OpenExplorer();
         menuToolsVSCode.Click += (_, _) => OpenVSCode();
         menuToolsSkillTree.Click += (_, _) => EditSkillTree();
@@ -398,6 +399,40 @@ public partial class MainForm : Form
         toolStripStatusLabelAic.ToolTipText = string.IsNullOrEmpty(args.Display)
             ? $"{args.AicUsed.Value:0.##########} AI Credits used this session"
             : args.Display;
+    }
+
+    /// <summary>
+    /// Opens the Local LLM Settings dialog so the user can point the filter at
+    /// an Ollama server (this machine or another on the network by host/IP),
+    /// pick the model, and set the confidence threshold. Persists the changes
+    /// and, when the filter is on and the endpoint or model changed, brings it
+    /// back online against the new target.
+    /// </summary>
+    private async Task EditLocalFilterSettingsAsync()
+    {
+        using var dlg = new LocalLlmSettingsDialog(
+            _settings.LocalFilterEndpoint,
+            _settings.LocalFilterModel,
+            _settings.LocalFilterThreshold);
+        if (dlg.ShowDialog(this) != DialogResult.OK)
+            return;
+
+        var endpointChanged = !string.Equals(_settings.LocalFilterEndpoint, dlg.Endpoint, StringComparison.OrdinalIgnoreCase);
+        var modelChanged    = !string.Equals(_settings.LocalFilterModel,    dlg.Model,    StringComparison.OrdinalIgnoreCase);
+
+        _settings.LocalFilterEndpoint  = dlg.Endpoint;
+        _settings.LocalFilterModel     = dlg.Model;
+        _settings.LocalFilterThreshold = dlg.Threshold;
+        _localFilter.Endpoint  = dlg.Endpoint;
+        _localFilter.Model     = dlg.Model;
+        _localFilter.Threshold = dlg.Threshold;
+        try { _settings.Save(); } catch { /* best-effort persist */ }
+
+        // Re-detect against the new target only when the filter is on and the
+        // connection actually changed; a threshold-only tweak takes effect on
+        // the next prompt without a round-trip.
+        if (_localFilter.Enabled && (endpointChanged || modelChanged))
+            await InitLocalFilterAsync();
     }
 
     /// <summary>
@@ -2129,14 +2164,47 @@ public partial class MainForm : Form
                         return;
                     }
 
+                    // When the local LLM filter is online, reduce and summarize the
+                    // README offline first so the cloud receives a compact digest
+                    // instead of the full file. Best-effort: any failure forwards the
+                    // full contents unchanged.
+                    var readmeBody = content;
+                    var readmeSummarized = false;
+                    if (_localFilter.Enabled && _localFilter.Available)
+                    {
+                        var summary = await _localFilter.SummarizeAsync(fileName, content);
+                        if (summary.Mode == LocalFilterMode.Minimized
+                            && !string.IsNullOrWhiteSpace(summary.Prompt))
+                        {
+                            readmeBody = summary.Prompt;
+                            readmeSummarized = true;
+                            var saved = summary.OriginalChars - summary.FinalChars;
+                            AppendOutput(
+                                $"\U0001f9e0 Local ({summary.ModelLabel}): summarized {fileName} " +
+                                $"{summary.OriginalChars} -> {summary.FinalChars} chars (saved {saved}), " +
+                                "forwarding digest to cloud\r\n\r\n",
+                                AppTheme.ColorMeta);
+                        }
+                        else if (!string.IsNullOrEmpty(summary.Note))
+                        {
+                            AppendOutput(
+                                $"\U0001f9e0 Local: {fileName} summary skipped ({summary.Note}); " +
+                                "sending full file to cloud\r\n\r\n",
+                                AppTheme.ColorMeta);
+                        }
+                    }
+
                     AppendOutput($"[Sharing {fileName} with Copilot for project context]\r\n\r\n",
                         AppTheme.ColorMeta);
 
+                    var readmeIntro = readmeSummarized
+                        ? $"Here is a local-model summary of '{fileName}' from the workspace root. "
+                        : $"Here is the contents of '{fileName}' from the workspace root. ";
                     await DispatchPromptAsync(
-                        $"Here is the contents of '{fileName}' from the workspace root. " +
+                        readmeIntro +
                         "Please read it to better understand the project we are working on, " +
                         "then briefly confirm you have done so.\r\n\r\n" +
-                        $"```\r\n{content}\r\n```");
+                        $"```\r\n{readmeBody}\r\n```");
                     return;
 
                 case ReadmePromptResult.OpenInVSCode:
