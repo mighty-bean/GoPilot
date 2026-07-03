@@ -50,15 +50,6 @@ internal sealed class LocalFilterService
 	public string Model     { get; set; } = "";   // empty => auto-selected from VRAM
 	public double Threshold { get; set; } = 0.85;
 
-	/// <summary>
-	/// Directive prepended to every forwarded prompt so the cloud model answers
-	/// tersely. Output tokens are the costliest line item, so trimming the
-	/// response saves far more AIC than trimming the prompt. Kept short and code-safe.
-	/// </summary>
-	public const string ConciseDirective =
-		"Respond concisely, directly, minimal tokens. No preamble, recap, or filler. " +
-		"Keep code, paths, and commands intact.";
-
 	public double VramGb       { get; private set; }
 	public bool   Available    { get; private set; }
 	public string StatusReason { get; private set; } = "not initialised";
@@ -153,26 +144,10 @@ internal sealed class LocalFilterService
 		var sb = new StringBuilder();
 		sb.Append(
 			"You are a pre-processor between a user and a powerful cloud LLM.\n" +
-			"Decide whether you can answer the user's request yourself, or whether it must be forwarded to the cloud.\n" +
-			"\n" +
-			"RESPOND IN ONE OF EXACTLY TWO WAYS - no preamble, no explanation:\n" +
-			"\n" +
-			"OPTION 1 - Answer directly, only if ALL of the following are true:\n" +
-			"  - Every file referenced in the prompt is provided in full below, OR the request needs no files\n" +
-			"  - You can answer completely and correctly with full confidence\n" +
-			"  - The request does not require code generation, refactoring, debugging, or architectural decisions\n" +
-			"  Write only your answer.\n" +
-			"\n" +
-			"OPTION 2 - Forward to the cloud, for everything else:\n" +
-			"  - Any referenced file is missing or only partially provided\n" +
-			"  - Code generation, refactoring, debugging, multi-step tasks, or architectural decisions\n" +
-			"  - Anything you cannot answer with complete confidence\n" +
-			"  Write exactly: PassThru: followed by the prompt rewritten with the fewest tokens that preserve its complete intent. Keep code, paths, names, and sequential steps verbatim.\n");
-
-		if (fileBlock.Length > 0)
-			sb.Append("\nFILES:").Append(fileBlock).Append('\n');
-		else
-			sb.Append("\nNo files are attached.\n");
+			"Your only job is to take the following USER PROMPT and rewrite it using the least number words required to convey its full intent.\n" +
+			"When minimizing this prompt, keep all code, `@` references, file paths and other critical components intact. Reduce unnecessary language. " +
+			"Think: Caveman speak, but never reduce to the point where the original instructions are lost." + 
+			"Your response will be passed to the cloud LLM verbatim. It must contain ONLY the minimized USER PROMPT.");
 
 		sb.Append("\nUSER PROMPT:\n").Append(prompt);
 		return sb.ToString();
@@ -239,24 +214,10 @@ internal sealed class LocalFilterService
 			if (string.IsNullOrWhiteSpace(response))
 				return Bypassed(prompt!, original, "empty local response");
 
-			if (response.StartsWith(PassThruPrefix, StringComparison.OrdinalIgnoreCase))
-			{
-				var minimized = response.Substring(PassThruPrefix.Length).Trim();
-				if (string.IsNullOrWhiteSpace(minimized)) minimized = prompt!;
-				return new LocalFilterResult
-				{
-					Mode = LocalFilterMode.Minimized,
-					Prompt = ConciseDirective + "\n\n" + minimized,
-					OriginalChars = original,
-					FinalChars = minimized.Length,
-					ModelLabel = Model,
-				};
-			}
-
 			return new LocalFilterResult
 			{
-				Mode = LocalFilterMode.Answered,
-				Answer = response,
+				Mode = LocalFilterMode.Minimized,
+				Prompt = response,
 				OriginalChars = original,
 				FinalChars = response.Length,
 				ModelLabel = Model,

@@ -1265,6 +1265,15 @@ public sealed class CopilotService : IAsyncDisposable
             "complete paths into clickable links but cannot reliably resolve a lone filename " +
             "located in a subfolder. Preserve any trailing line/column suffix (e.g. \":42\").");
 
+        // Response economy directive -- always present. Output tokens are the
+        // costliest line item, so a terse, direct reply is requested once at the
+        // session level (baked in, survives compaction) rather than prepended to
+        // every prompt sent to the cloud.
+        parts.Add(
+            "RESPONSE ECONOMY: Respond concisely and directly, using the fewest tokens needed. " +
+            "No preamble, recap, social politeness, or filler. " +
+            "Keep code, file paths, steps, and commands intact.");
+
         // Tiered instructions: Personal -> Skill Tree[*] -> Project
         var loadedTiers = new List<string>();
         foreach (var (label, folder) in GetTierFolders())

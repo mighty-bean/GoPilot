@@ -278,7 +278,7 @@ public partial class MainForm : Form
             if (enabled)
                 await InitLocalFilterAsync();
         };
-        menuOptionLocalSettings.Click += async (_, _) => await EditLocalFilterSettingsAsync();
+        menuToolsLocalSettings.Click += async (_, _) => await EditLocalFilterSettingsAsync();
         menuToolsExplorer.Click += (_, _) => OpenExplorer();
         menuToolsVSCode.Click += (_, _) => OpenVSCode();
         menuToolsSkillTree.Click += (_, _) => EditSkillTree();
@@ -1115,8 +1115,8 @@ public partial class MainForm : Form
                 var saved = r.OriginalChars - r.FinalChars;
                 var why = string.IsNullOrEmpty(r.Note) ? "forwarding to cloud" : $"cloud needed - {r.Note}";
                 localMeta = saved > 0
-                    ? $"\U0001f9e0 Local ({r.ModelLabel}): minimized {r.OriginalChars} -> {r.FinalChars} chars (saved {saved}), {why}; concise reply requested"
-                    : $"\U0001f9e0 Local ({r.ModelLabel}): {why}; concise reply requested";
+                    ? $"\U0001f9e0 Local ({r.ModelLabel}): minimized {r.OriginalChars} -> {r.FinalChars} chars (saved {saved}), {why}"
+                    : $"\U0001f9e0 Local ({r.ModelLabel}): {why}";
             }
         }
 
