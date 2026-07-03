@@ -132,6 +132,95 @@ internal sealed class LocalFilterService
 	private static string SafeHost(string endpoint) =>
 		Uri.TryCreate(endpoint, UriKind.Absolute, out var u) ? u.Host : endpoint;
 
+	// -----------------------------------------------------------------------
+	// Instruction builder
+	// -----------------------------------------------------------------------
+
+	// -----------------------------------------------------------------------
+	// Instruction builder
+	// -----------------------------------------------------------------------
+
+	private const string PassThruPrefix = "PassThru:";
+
+	/// <summary>
+	/// Single instruction for every prompt. The model replies in one of exactly
+	/// two plain-text forms: a direct answer, or "PassThru:" followed by a
+	/// minimised version of the prompt. Plain text is far more reliable than
+	/// multi-field JSON for small local models.
+	/// </summary>
+	private static string BuildInstruction(string fileBlock, string prompt)
+	{
+		var sb = new StringBuilder();
+		sb.Append(
+			"You are a pre-processor between a user and a powerful cloud LLM.\n" +
+			"Decide whether you can answer the user's request yourself, or whether it must be forwarded to the cloud.\n" +
+			"\n" +
+			"RESPOND IN ONE OF EXACTLY TWO WAYS - no preamble, no explanation:\n" +
+			"\n" +
+			"OPTION 1 - Answer directly, only if ALL of the following are true:\n" +
+			"  - Every file referenced in the prompt is provided in full below, OR the request needs no files\n" +
+			"  - You can answer completely and correctly with full confidence\n" +
+			"  - The request does not require code generation, refactoring, debugging, or architectural decisions\n" +
+			"  Write only your answer.\n" +
+			"\n" +
+			"OPTION 2 - Forward to the cloud, for everything else:\n" +
+			"  - Any referenced file is missing or only partially provided\n" +
+			"  - Code generation, refactoring, debugging, multi-step tasks, or architectural decisions\n" +
+			"  - Anything you cannot answer with complete confidence\n" +
+			"  Write exactly: PassThru: followed by the prompt rewritten with the fewest tokens that preserve its complete intent. Keep code, paths, names, and sequential steps verbatim.\n");
+
+		if (fileBlock.Length > 0)
+			sb.Append("\nFILES:").Append(fileBlock).Append('\n');
+		else
+			sb.Append("\nNo files are attached.\n");
+
+		sb.Append("\nUSER PROMPT:\n").Append(prompt);
+		return sb.ToString();
+	}
+
+	// -----------------------------------------------------------------------
+	// Shared helpers
+	// -----------------------------------------------------------------------
+
+	private static string BuildFileBlock(IReadOnlyList<(string Name, string Content)>? files)
+	{
+		if (files == null || files.Count == 0) return "";
+		var sb = new StringBuilder();
+		foreach (var f in files)
+			sb.Append("\n--- FILE: ").Append(f.Name).Append(" ---\n").Append(f.Content);
+		return sb.ToString();
+	}
+
+	private async Task<string> RunGenerateAsync(string instruction, string? format, CancellationToken ct)
+	{
+		var sb = new StringBuilder();
+		var req = new GenerateRequest
+		{
+			Model = Model,
+			Prompt = instruction,
+			Stream = true,
+			Format = format,
+			Options = new RequestOptions { Temperature = 0f },
+		};
+		await foreach (var chunk in _client!.GenerateAsync(req).WithCancellation(ct))
+			sb.Append(chunk?.Response);
+		return sb.ToString();
+	}
+
+	private static LocalFilterResult Bypassed(string prompt, int original, string? note = null) =>
+		new LocalFilterResult
+		{
+			Mode = LocalFilterMode.Bypassed,
+			Prompt = prompt,
+			OriginalChars = original,
+			FinalChars = original,
+			Note = note,
+		};
+
+	// -----------------------------------------------------------------------
+	// ProcessAsync
+	// -----------------------------------------------------------------------
+
 	/// <summary>
 	/// Runs the prompt through the local model. Returns Bypassed if the filter is
 	/// off, unavailable, or anything goes wrong so the caller forwards as-is.
@@ -140,84 +229,42 @@ internal sealed class LocalFilterService
 	{
 		var original = prompt?.Length ?? 0;
 		if (!Enabled || !Available || _client == null || string.IsNullOrWhiteSpace(prompt))
-			return new LocalFilterResult { Mode = LocalFilterMode.Bypassed, Prompt = prompt ?? "", OriginalChars = original, FinalChars = original };
+			return Bypassed(prompt ?? "", original);
 
 		try
 		{
-			var fileBlock = new StringBuilder();
-			if (files != null)
+			var fileBlock = BuildFileBlock(files);
+			var response  = (await RunGenerateAsync(BuildInstruction(fileBlock, prompt!), format: null, ct)).Trim();
+
+			if (string.IsNullOrWhiteSpace(response))
+				return Bypassed(prompt!, original, "empty local response");
+
+			if (response.StartsWith(PassThruPrefix, StringComparison.OrdinalIgnoreCase))
 			{
-				foreach (var f in files)
-				{
-					fileBlock.Append("\n--- FILE: ").Append(f.Name).Append(" ---\n").Append(f.Content);
-				}
-			}
-			var hasFiles = fileBlock.Length > 0;
-
-			var instruction =
-				"You are a local pre-processor between a user and a powerful cloud LLM. " +
-				"Reply with ONLY a single JSON object, no prose, shaped: " +
-				"{\"confidence\":0.0-1.0,\"answer\":\"\",\"minimized\":\"\"}. " +
-				"If you can fully and correctly answer the request yourself, set answer to that answer and confidence to your certainty. " +
-				(hasFiles
-					? "The attached file contents are provided below; use them to answer if sufficient. " 
-					: "no file atachments are included.") +
-				"If unsure or the task needs codebase/tool access or references a file or folder not provided, leave answer empty and set confidence low. " +
-				"Always Double-check your response for correctness and evidence of hallucination. Be skeptical. Set confidence value accordingly." +
-				"Always set minimized to the prompt rewritten to the fewest tokens that preserve full intent (keep code, paths, names verbatim). Be sure the minimized prompt matches the original instructions, just with fewer words" +
-				(hasFiles ? "ATTACHED FILES:" + fileBlock + "\n" : "") +
-				"USER PROMPT:\n" + prompt;
-
-			var sb = new StringBuilder();
-			var req = new GenerateRequest
-			{
-				Model = Model,
-				Prompt = instruction,
-				Stream = true,
-				Format = "json",
-				Options = new RequestOptions { Temperature = 0f },
-			};
-			await foreach (var chunk in _client.GenerateAsync(req).WithCancellation(ct))
-				sb.Append(chunk?.Response);
-
-			var (confidence, answer, minimized) = ParseJson(sb.ToString());
-			var fwd = string.IsNullOrWhiteSpace(minimized) ? prompt : minimized.Trim();
-
-			if (confidence >= Threshold && !string.IsNullOrWhiteSpace(answer))
-			{
+				var minimized = response.Substring(PassThruPrefix.Length).Trim();
+				if (string.IsNullOrWhiteSpace(minimized)) minimized = prompt!;
 				return new LocalFilterResult
 				{
-					Mode = LocalFilterMode.Answered,
-					Answer = answer.Trim(),
-					Confidence = confidence,
+					Mode = LocalFilterMode.Minimized,
+					Prompt = ConciseDirective + "\n\n" + minimized,
 					OriginalChars = original,
-					FinalChars = answer.Trim().Length,
+					FinalChars = minimized.Length,
 					ModelLabel = Model,
 				};
 			}
 
-			string reason;
-			if (confidence <= 0 && string.IsNullOrWhiteSpace(answer))
-				reason = "no parseable local reply";
-			else if (string.IsNullOrWhiteSpace(answer))
-				reason = $"no local answer (conf {confidence:0.00}), needs cloud";
-			else
-				reason = $"low confidence {confidence:0.00} < {Threshold:0.00}";
-
 			return new LocalFilterResult
 			{
-				Mode = LocalFilterMode.Minimized,
-				Prompt = ConciseDirective + "\n\n" + fwd,
-				Confidence = confidence,
+				Mode = LocalFilterMode.Answered,
+				Answer = response,
 				OriginalChars = original,
-				FinalChars = fwd.Length,
+				FinalChars = response.Length,
 				ModelLabel = Model,
-				Note = reason,
 			};
 		}
 		catch (Exception ex)
 		{
-			return new LocalFilterResult { Mode = LocalFilterMode.Bypassed, Prompt = prompt, OriginalChars = original, FinalChars = original, Note = ex.Message };
+			return Bypassed(prompt!, original, ex.Message);
 		}
 	}
 
@@ -234,7 +281,7 @@ internal sealed class LocalFilterService
 	{
 		var original = content?.Length ?? 0;
 		if (!Enabled || !Available || _client == null || string.IsNullOrWhiteSpace(content))
-			return new LocalFilterResult { Mode = LocalFilterMode.Bypassed, Prompt = content ?? "", OriginalChars = original, FinalChars = original };
+			return Bypassed(content ?? "", original);
 
 		try
 		{
@@ -248,20 +295,9 @@ internal sealed class LocalFilterService
 				"Reply with ONLY the summary text, no preamble or commentary. " +
 				"DOCUMENT (" + documentName + "):\n" + content;
 
-			var sb = new StringBuilder();
-			var req = new GenerateRequest
-			{
-				Model = Model,
-				Prompt = instruction,
-				Stream = true,
-				Options = new RequestOptions { Temperature = 0f },
-			};
-			await foreach (var chunk in _client.GenerateAsync(req).WithCancellation(ct))
-				sb.Append(chunk?.Response);
-
-			var summary = sb.ToString().Trim();
+			var summary = (await RunGenerateAsync(instruction, format: null, ct)).Trim();
 			if (string.IsNullOrWhiteSpace(summary))
-				return new LocalFilterResult { Mode = LocalFilterMode.Bypassed, Prompt = content, OriginalChars = original, FinalChars = original, Note = "empty local summary" };
+				return Bypassed(content!, original, "empty local summary");
 
 			return new LocalFilterResult
 			{
@@ -274,19 +310,22 @@ internal sealed class LocalFilterService
 		}
 		catch (Exception ex)
 		{
-			return new LocalFilterResult { Mode = LocalFilterMode.Bypassed, Prompt = content, OriginalChars = original, FinalChars = original, Note = ex.Message };
+			return Bypassed(content!, original, ex.Message);
 		}
 	}
 
-	private static (double confidence, string answer, string minimized) ParseJson(string raw)
+	private static (string mode, double confidence, string answer, string minimized) ParseJson(string raw)
 	{
+		// Still used by callers that may extend ProcessAsync in future.
+		// Returns safe defaults on any parse failure.
 		var s = raw.IndexOf('{');
 		var e = raw.LastIndexOf('}');
-		if (s < 0 || e <= s) return (0, "", "");
+		if (s < 0 || e <= s) return ("minimize", 0, "", "");
 		try
 		{
 			using var doc = JsonDocument.Parse(raw.Substring(s, e - s + 1));
 			var root = doc.RootElement;
+			var mode = root.TryGetProperty("mode", out var mv) ? (mv.GetString() ?? "minimize") : "minimize";
 			double conf = 0;
 			if (root.TryGetProperty("confidence", out var c))
 			{
@@ -295,8 +334,8 @@ internal sealed class LocalFilterService
 			}
 			var ans = root.TryGetProperty("answer", out var a) ? (a.GetString() ?? "") : "";
 			var min = root.TryGetProperty("minimized", out var m) ? (m.GetString() ?? "") : "";
-			return (conf, ans, min);
+			return (mode, conf, ans, min);
 		}
-		catch { return (0, "", ""); }
+		catch { return ("minimize", 0, "", ""); }
 	}
 }

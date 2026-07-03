@@ -1152,11 +1152,22 @@ public partial class MainForm : Form
         int total = 0;
 
         var candidates = new List<string>(_attachments);
+
+        // @-prefixed relative paths: @src/foo.cs
         foreach (System.Text.RegularExpressions.Match m in
                  System.Text.RegularExpressions.Regex.Matches(prompt, @"@([^\s]+)"))
         {
             var rel = m.Groups[1].Value;
             candidates.Add(!string.IsNullOrEmpty(root) ? Path.Combine(root, rel) : rel);
+        }
+
+        // Bare absolute paths typed directly into the prompt, e.g.:
+        //   C:\dev\project\Foo.cs  or  /home/user/project/Foo.cs
+        foreach (System.Text.RegularExpressions.Match m in
+                 System.Text.RegularExpressions.Regex.Matches(prompt,
+                     @"(?:[A-Za-z]:\\|/)(?:[^\s,;'""()\r\n]+[/\\])*[^\s,;'""()\r\n]+\.\w+"))
+        {
+            candidates.Add(m.Value);
         }
 
         foreach (var path in candidates)
