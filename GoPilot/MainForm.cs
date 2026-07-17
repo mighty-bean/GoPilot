@@ -127,6 +127,8 @@ public partial class MainForm : Form
         // Load persisted settings and sync with service
         _settings = GoPilotSettings.Load();
         _copilot.SkillTreeFolders = _settings.SkillTreeFolders;
+        _copilot.McpServers = _settings.McpServers;
+        _copilot.McpDisabledDiscovered = _settings.McpDisabledDiscovered;
         _copilot.CavemanMode = _settings.CavemanMode;
         menuSessionCaveman.Checked = _settings.CavemanMode;
         menuSessionShowSteps.Checked = _settings.DetailsDefaultOpen;
@@ -145,6 +147,9 @@ public partial class MainForm : Form
         // live connection. Both are persisted again once _uiReady flips on.
         menuOptionAutoApprove.Checked = _settings.LastAutoApprove;
         menuOptionFleet.Checked = _settings.LastFleet;
+        // Tool Search defaults to on (matching the runtime default). Restore the
+        // persisted toggle and threshold before the service syncs below.
+        menuOptionToolSearch.Checked = _settings.ToolSearchEnabled;
         // Stash the persisted effort for one-shot consumption by the first
         // RefreshEffortCombo call (triggered from PopulateModelsAsync via the
         // model combo's SelectedIndexChanged handler).
@@ -159,6 +164,8 @@ public partial class MainForm : Form
         // Sync service with the UI defaults set above
         _copilot.AutoApprove = menuOptionAutoApprove.Checked;
         _copilot.FleetMode = menuOptionFleet.Checked;
+        _copilot.ToolSearchEnabled = menuOptionToolSearch.Checked;
+        _copilot.ToolSearchDeferThreshold = _settings.ToolSearchDeferThreshold;
 
         // A3: seed the meter with a visible "starting state" so the affordance
         // is discoverable before the first AssistantUsageEvent arrives.
@@ -279,6 +286,7 @@ public partial class MainForm : Form
                 await InitLocalFilterAsync();
         };
         menuToolsLocalSettings.Click += async (_, _) => await EditLocalFilterSettingsAsync();
+        menuToolsMcpServers.Click += (_, _) => EditMcpServers();
         menuToolsExplorer.Click += (_, _) => OpenExplorer();
         menuToolsVSCode.Click += (_, _) => OpenVSCode();
         menuToolsSkillTree.Click += (_, _) => EditSkillTree();
@@ -308,6 +316,22 @@ public partial class MainForm : Form
             {
                 var state = menuOptionFleet.Checked ? "enabled" : "disabled";
                 ScheduleHandoff($"Fleet {state}");
+            }
+        };
+
+        menuOptionToolSearch.CheckedChanged += (_, _) =>
+        {
+            // Tool search is a session-creation setting (ToolSearchConfig is read
+            // when a session is created/resumed), so a mid-session change only
+            // takes effect after a new session -- schedule the same summary-and-
+            // restart handoff used by Fleet and Mode changes.
+            _copilot.ToolSearchEnabled = menuOptionToolSearch.Checked;
+            _settings.ToolSearchEnabled = menuOptionToolSearch.Checked;
+            try { _settings.Save(); } catch { /* best-effort persist */ }
+            if (_copilot.IsConnected && _mainSessionId != null)
+            {
+                var state = menuOptionToolSearch.Checked ? "enabled" : "disabled";
+                ScheduleHandoff($"Tool search {state}");
             }
         };
 
@@ -1920,6 +1944,10 @@ public partial class MainForm : Form
             _copilot.AutoApprove = menuOptionAutoApprove.Checked;
             _copilot.FleetMode = menuOptionFleet.Checked;
 
+            // Let the user review/curate discovered MCP servers before the fresh
+            // session is built (so unwanted servers never load).
+            ReviewMcpServersBeforeSession();
+
             await _copilot.EnsureSessionAsync();
 
             AppendOutput("─────────── session refreshed ───────────\r\n\r\n", AppTheme.ColorMeta);
@@ -2283,6 +2311,11 @@ public partial class MainForm : Form
             _copilot.ActiveMode = comboBoxMode.SelectedItem?.ToString() ?? "Standard";
             _copilot.AutoApprove = menuOptionAutoApprove.Checked;
             _copilot.FleetMode = menuOptionFleet.Checked;
+
+            // First action of a new session: let the user review/curate the MCP
+            // servers discovered across the search folders (workspace, user, app)
+            // before the session is created, so unwanted servers never load.
+            ReviewMcpServersBeforeSession();
 
             await _copilot.EnsureSessionAsync();
             var version = await _copilot.GetVersionAsync();
@@ -2759,6 +2792,7 @@ public partial class MainForm : Form
     private Bitmap? _badgeFleet;
     private Bitmap? _badgeShowSteps;
     private Bitmap? _badgeLocalFilter;
+    private Bitmap? _badgeToolSearch;
 
     // Cached ImageAttributes used to render an Options badge in the
     // "off" (greyed-out) state. Built once in InitializeOptionIcons and
@@ -2804,12 +2838,16 @@ public partial class MainForm : Form
         _badgeLocalFilter = OptionIconRenderer.CreateSquareBadge(
                                 OptionIconRenderer.LocalFilterSquare,
                                 OptionIconRenderer.LocalFilterGlyph);
+        _badgeToolSearch = OptionIconRenderer.CreateSquareBadge(
+                                OptionIconRenderer.ToolSearchSquare,
+                                OptionIconRenderer.ToolSearchGlyph);
 
         menuSessionCaveman.Image = _badgeCaveman;
         menuOptionAutoApprove.Image = _badgeAutoApprove;
         menuOptionFleet.Image = _badgeFleet;
         menuSessionShowSteps.Image = _badgeShowSteps;
         menuOptionLocalFilter.Image = _badgeLocalFilter;
+        menuOptionToolSearch.Image = _badgeToolSearch;
 
         // Show the 18x18 badges at their native size in the menu margin
         // instead of letting WinForms downscale them to the default 16x16.
@@ -2838,6 +2876,7 @@ public partial class MainForm : Form
         menuSessionCaveman.CheckedChanged += (_, _) => buttonOptions.Invalidate();
         menuSessionShowSteps.CheckedChanged += (_, _) => buttonOptions.Invalidate();
         menuOptionLocalFilter.CheckedChanged += (_, _) => buttonOptions.Invalidate();
+        menuOptionToolSearch.CheckedChanged += (_, _) => buttonOptions.Invalidate();
 
         // Clear the design-time caption so our Paint handler owns the entire
         // button surface (otherwise the base button paints "⚙ Options ▾" and
@@ -2851,8 +2890,9 @@ public partial class MainForm : Form
     /// badges for every option in the middle (enabled options in full
     /// colour, disabled options greyed-out via _disabledBadgeAttr), and
     /// a chevron on the right. The badge order is fixed (Auto-approve,
-    /// Fleet, Caveman, Show Steps) so the user can read each option's
-    /// state by position regardless of which order they toggled them.
+    /// Fleet, Caveman, Show Steps, Local filter, Tool Search) so the user
+    /// can read each option's state by position regardless of which order
+    /// they toggled them.
     /// </summary>
     private void OnOptionsButtonPaint(object? sender, PaintEventArgs e)
     {
@@ -2872,12 +2912,13 @@ public partial class MainForm : Form
         // Fixed order, with the current Checked state of each menu item.
         // Any badge bitmap that failed to load is skipped so we never
         // leave a hole in the strip.
-        var badges = new List<(Bitmap Bmp, bool On)>(4);
+        var badges = new List<(Bitmap Bmp, bool On)>(6);
         if (_badgeAutoApprove != null) badges.Add((_badgeAutoApprove, menuOptionAutoApprove.Checked));
         if (_badgeFleet != null) badges.Add((_badgeFleet, menuOptionFleet.Checked));
         if (_badgeCaveman != null) badges.Add((_badgeCaveman, menuSessionCaveman.Checked));
         if (_badgeShowSteps != null) badges.Add((_badgeShowSteps, menuSessionShowSteps.Checked));
         if (_badgeLocalFilter != null) badges.Add((_badgeLocalFilter, menuOptionLocalFilter.Checked));
+        if (_badgeToolSearch != null) badges.Add((_badgeToolSearch, menuOptionToolSearch.Checked));
 
         var fmt = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix
                 | TextFormatFlags.SingleLine;
@@ -2941,6 +2982,69 @@ public partial class MainForm : Form
                 "Settings Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
         UpdateSkillSourcesTooltip();
+    }
+
+    /// <summary>
+    /// Manages the [McpServers] list in gopilot.ini via
+    /// <see cref="McpServersDialog"/>. MCP servers are attached at session
+    /// creation/resume, so when a change is made to a live session we defer a
+    /// summary-and-restart handoff (the same mechanism used by Skill Tree and
+    /// Fleet changes) so the next send picks up the new server set.
+    /// </summary>
+    /// <summary>
+    /// Manages MCP servers via <see cref="McpServersDialog"/>, opened from
+    /// Tools > MCP Servers. Always shows the dialog (manual entries plus servers
+    /// discovered from .mcp.json across the search folders).
+    /// </summary>
+    private void EditMcpServers()
+    {
+        OpenMcpServersDialog(_copilot.DiscoverMcpServers(), scheduleHandoffIfConnected: true);
+    }
+
+    /// <summary>
+    /// Shown automatically as a new session starts (before the README prompt and
+    /// before the session is created) so the user can toggle off unwanted servers
+    /// or add their own before anything loads. Only interrupts when at least one
+    /// server was discovered from a .mcp.json file; otherwise it stays out of the
+    /// way. Runs before session creation, so no handoff is needed.
+    /// </summary>
+    private void ReviewMcpServersBeforeSession()
+    {
+        var discovered = _copilot.DiscoverMcpServers();
+        if (discovered.Count == 0) return;
+        OpenMcpServersDialog(discovered, scheduleHandoffIfConnected: false);
+    }
+
+    /// <summary>
+    /// Opens the MCP Servers manager with the supplied discovered set, persists
+    /// any changes to gopilot.ini, and syncs them to the service. When
+    /// <paramref name="scheduleHandoffIfConnected"/> is true and a session is
+    /// live, a summary-and-restart handoff is scheduled so the change takes
+    /// effect on the next send.
+    /// </summary>
+    private void OpenMcpServersDialog(List<McpServerEntry> discovered, bool scheduleHandoffIfConnected)
+    {
+        using var dialog = new McpServersDialog(
+            _settings.McpServers, discovered, _settings.McpDisabledDiscovered);
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+        _settings.McpServers = dialog.Servers;
+        _settings.McpDisabledDiscovered = dialog.DisabledDiscovered;
+        _copilot.McpServers = dialog.Servers;
+        _copilot.McpDisabledDiscovered = dialog.DisabledDiscovered;
+        try
+        {
+            _settings.Save();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"Could not save settings to gopilot.ini:\n\n{ex.Message}",
+                "Settings Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
+        if (scheduleHandoffIfConnected && _copilot.IsConnected && _mainSessionId != null)
+            ScheduleHandoff("MCP servers changed");
     }
 
     /// <summary>

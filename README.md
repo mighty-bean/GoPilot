@@ -18,6 +18,8 @@ A Windows desktop GUI for the [GitHub Copilot SDK](libs/copilot-sdk). GoPilot wr
 - Skill Tree: ordered folders that contribute `skills/`, `agents/`, `prompts/`, and `gopilot-instructions.md` to every session.
 - Custom agents and skills auto-discovered and insertable as `@agent:name` / `@skill:name`.
 - Plan, Autopilot, and Fleet modes alongside Standard chat.
+- Tool Search: defers MCP and external tools behind an on-demand search once the active tool count crosses a threshold, keeping prompts small when several MCP servers are connected.
+- MCP Servers manager: attach local (stdio) or HTTP MCP servers to every session, with per-server enable toggles, and auto-discover `.mcp.json` files from the workspace, user, and app folders (e.g. the one the Unreal Engine 5.8 editor generates). The dialog opens automatically at session start when servers are found so you can curate them first.
 - Tool permission dialog with Allow / Approve Similar / Deny, plus an Auto-approve toggle.
 - Caveman Mode: optional client-side prompt compression to cut tokens.
 - **NEW** Local LLM filter: optional codellama pre-pass (on this machine or any Ollama host on your network) that minimizes prompts and answers simple requests locally to save cloud tokens.
@@ -74,7 +76,7 @@ Attach files and folders, or insert `@agent:`, `@skill:`, or prompt-file referen
 
 ### Tools menu
 
-PowerShell, File Explorer, and VS Code at the workspace root. Skill Tree, Skill Sources, and Browse Skill Catalog editors for managing reusable assets.
+PowerShell, File Explorer, and VS Code at the workspace root. Skill Tree, Skill Sources, and Browse Skill Catalog editors for managing reusable assets. MCP Servers manager for attaching local (stdio) and HTTP MCP servers.
 
 ### Toolbar
 
@@ -95,6 +97,7 @@ Model, Mode, Effort, Fleet, and Auto-approve are persisted to `gopilot.ini` unde
 |---|---|---|
 | ⚠️ Auto-approve tools | Off | Skip the permission dialog. |
 | 👥 Fleet mode | Off | Spawn parallel sub-agents on large tasks. Toggling triggers a summary-and-restart handoff on next send. |
+| 🔍 Tool Search | On | Defer MCP and external tools behind an on-demand search once the tool count crosses the threshold. Toggling triggers a summary-and-restart handoff on next send. See [Tool Search](#tool-search). |
 | 🦴 Caveman Mode | Off | Compress prompts client-side. See [Caveman Mode](#caveman-mode). |
 | 🧠 Local LLM filter | Off | Route prompts through a local codellama model first. See [Local LLM Filter](#local-llm-filter). |
 | 🧠 Local LLM settings... | - | Pick the Ollama server (localhost or a network machine by host/IP), model, and confidence threshold. See [Local LLM Filter](#local-llm-filter). |
@@ -164,6 +167,36 @@ Every session GoPilot creates gets a stable ID of the form `{LeafFolder}-{MM-dd-
 ## Fleet Mode
 
 With Fleet on, Copilot can spawn parallel sub-agents on different parts of a task. The output panel shows each agent's progress; the session completes when the last sub-agent finishes. Best for large refactors and tasks that decompose cleanly.
+
+## Tool Search
+
+Tool Search keeps the model's active tool set small. When the number of available tools crosses a threshold (default 30), MCP and external tools are deferred and surfaced on demand through the runtime's built-in `tool_search_tool`, instead of being pre-loaded into every prompt. This trims token usage when you connect several MCP servers at once.
+
+- **On (default):** matches the Copilot runtime default. Recommended when you attach multiple MCP servers or large tool sets.
+- **Off:** every tool stays resident in each prompt (useful for small, fixed tool sets where you never want a search round-trip).
+
+Tool Search is applied when a session is created or resumed, so toggling it mid-session triggers the same summary-and-restart handoff used by Mode and Fleet changes. The toggle and threshold are persisted in `gopilot.ini` under `[ToolSearch]` (`Enabled=true|false`, `DeferThreshold=<count>`); edit `DeferThreshold` there to tune when deferral kicks in.
+
+Tool Search works on the combined tool set from GoPilot's own MCP Servers (below), any MCP servers the Copilot CLI discovers, and built-in tools.
+
+## MCP Servers
+
+**Tools ▸ 🔌 MCP Servers...** manages the [Model Context Protocol](https://modelcontextprotocol.io) servers GoPilot attaches to every session it creates or resumes. Two transports are supported:
+
+| Transport | Use for | Key fields |
+|---|---|---|
+| Local process (stdio) | A server launched as a command on this machine (e.g. the Unreal Engine 5.8 MCP server). | Command (executable), Arguments (one per line), Working directory, Environment (`KEY=VALUE`, one per line). |
+| HTTP | A server reachable at a URL. | URL, Headers (`KEY=VALUE`, one per line). |
+
+- Each row has an **enable** checkbox: untick to stop loading that server.
+- **Add...** / **Edit...** / **Remove** manage your own entries.
+- **Discovered servers** are found automatically in a `.mcp.json` file in any of the same folders GoPilot searches for instruction/config files: the **workspace** folder, your **user** folder, and the **GoPilot app** folder (the one holding `gopilot.ini`). `.mcp.json` is the standard client-config format written by tools such as **Unreal Engine** (`ModelContextProtocol.GenerateClientConfig`), Claude Code, Cursor, and VS Code - so enabling the Unreal MCP server is just: generate the file in the editor, open that project in GoPilot, and go. Discovered rows are read-only (shown with their source `.mcp.json` path in the **Source** column and below the list) but can be unticked to disable them; workspace files win name collisions over user/app files, and discovered servers override same-named manual entries.
+- **At the start of every new session** - before the README prompt and before the session is created - GoPilot opens this dialog automatically **if any `.mcp.json` server was discovered**, so you can toggle off anything unwanted (or add your own) before it loads. If nothing was discovered, it stays out of the way.
+- As each session starts, GoPilot reports the load result for every server in the output panel (e.g. `[MCP] unreal-mcp (http): connected`, `[MCP] adopted 'unreal-mcp' from C:\proj\.mcp.json (http)`, or a failure with the server's error text).
+
+Manual servers are persisted in `gopilot.ini` under `[McpServers]` as one base64-encoded JSON token per `Server=` line; disabled discovered servers are stored there as `Disabled=<name>` lines. Discovered servers themselves are read fresh from disk each session (never copied into `gopilot.ini`). Because servers are read at session creation, changing them from the Tools menu on a live session triggers the same summary-and-restart handoff used by Skill Tree and Fleet changes.
+
+GoPilot's servers are additive to whatever the Copilot CLI already discovers from its own configuration; when the combined tool count is large, enable **Tool Search** to keep prompts small.
 
 ## Skill Tree
 

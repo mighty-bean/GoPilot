@@ -266,6 +266,175 @@ public sealed class CopilotService : IAsyncDisposable
     /// Mirrored from GoPilot's Session menu and persisted in gopilot.ini.
     /// </summary>
     public bool CavemanMode { get; set; } = false;
+
+    /// <summary>
+    /// When true, GoPilot enables the runtime's tool-search behaviour so that
+    /// MCP and external tools beyond <see cref="ToolSearchDeferThreshold"/> are
+    /// deferred behind the built-in <c>tool_search_tool</c> instead of being
+    /// pre-loaded into every prompt. Defaults to true to match the runtime
+    /// default; turning it off forces every tool to stay resident. The value is
+    /// read at session creation/resume, so mid-session changes require a new
+    /// session (the UI schedules a summary-and-restart handoff). Persisted in
+    /// gopilot.ini under <c>[ToolSearch]</c>.
+    /// </summary>
+    public bool ToolSearchEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Tool count above which MCP and external tools are deferred behind tool
+    /// search when <see cref="ToolSearchEnabled"/> is true. Mirrors the runtime
+    /// default of 30. Persisted in gopilot.ini under <c>[ToolSearch]</c>.
+    /// </summary>
+    public int ToolSearchDeferThreshold { get; set; } = 30;
+
+    /// <summary>
+    /// Builds the <see cref="ToolSearchConfig"/> applied to every session GoPilot
+    /// creates or resumes, reflecting the current <see cref="ToolSearchEnabled"/>
+    /// and <see cref="ToolSearchDeferThreshold"/> settings.
+    /// </summary>
+    private ToolSearchConfig BuildToolSearchConfig() =>
+        new ToolSearchConfig
+        {
+            Enabled        = ToolSearchEnabled,
+            DeferThreshold = ToolSearchDeferThreshold,
+        };
+
+    /// <summary>
+    /// User-configured MCP servers, mirrored from GoPilot's MCP Servers manager
+    /// and persisted in gopilot.ini. The enabled entries are converted to SDK
+    /// configs by <see cref="BuildMcpServers"/> and attached to every session
+    /// GoPilot creates or resumes.
+    /// </summary>
+    public List<McpServerEntry> McpServers { get; set; } = new();
+
+    /// <summary>
+    /// Names of servers discovered from <c>.mcp.json</c> files that the user has
+    /// switched off in the MCP Servers manager. Discovered servers are otherwise
+    /// enabled by default; entries whose name appears here are excluded from the
+    /// session. Persisted in gopilot.ini under <c>[McpServers]</c> as
+    /// <c>Disabled=</c> lines.
+    /// </summary>
+    public List<string> McpDisabledDiscovered { get; set; } = new();
+
+    /// <summary>
+    /// Scans for <c>.mcp.json</c> files in the same locations GoPilot consults
+    /// for instruction/config files -- the workspace folder, the user's home
+    /// folder, and the folder that holds gopilot.ini (the app directory) -- and
+    /// returns every server they declare, tagged with its <see cref="McpServerEntry.SourcePath"/>.
+    /// Servers are de-duplicated by name with the workspace taking precedence
+    /// over the user folder, which takes precedence over the app folder. This is
+    /// the raw discovery set (the caller applies the user's disable choices).
+    /// </summary>
+    public List<McpServerEntry> DiscoverMcpServers()
+    {
+        var result    = new List<McpServerEntry>();
+        var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var dir in EnumerateMcpSearchDirs())
+        {
+            var path = Path.Combine(dir, ".mcp.json");
+            if (!File.Exists(path)) continue;
+
+            List<McpServerEntry> entries;
+            try { entries = McpServerEntry.FromMcpJson(File.ReadAllText(path)); }
+            catch { continue; }
+
+            foreach (var e in entries)
+            {
+                if (string.IsNullOrWhiteSpace(e.Name)) continue;
+                if (!seenNames.Add(e.Name.Trim())) continue; // higher-precedence file already claimed this name
+                e.SourcePath = path;
+                result.Add(e);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// The directories searched for a <c>.mcp.json</c> file, in precedence order
+    /// (workspace first so it wins name collisions): the open workspace folder,
+    /// the user's home folder, then the app directory that holds gopilot.ini.
+    /// Duplicates are skipped so a workspace opened at the app directory is not
+    /// scanned twice.
+    /// </summary>
+    private IEnumerable<string> EnumerateMcpSearchDirs()
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (!string.IsNullOrWhiteSpace(WorkingDirectory) && seen.Add(WorkingDirectory!))
+            yield return WorkingDirectory!;
+
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!string.IsNullOrWhiteSpace(home) && seen.Add(home))
+            yield return home;
+
+        var appDir = AppContext.BaseDirectory;
+        if (!string.IsNullOrWhiteSpace(appDir) && seen.Add(appDir))
+            yield return appDir;
+    }
+
+    /// <summary>
+    /// Converts the enabled manual <see cref="McpServers"/> entries and the
+    /// discovered <c>.mcp.json</c> servers the user has not disabled into the SDK
+    /// dictionary consumed by <c>SessionConfig.McpServers</c>. Discovered servers
+    /// override same-named manual entries. Returns null when nothing is
+    /// configured so the wire payload omits the field entirely.
+    /// </summary>
+    private Dictionary<string, McpServerConfig>? BuildMcpServers()
+    {
+        var dict = new Dictionary<string, McpServerConfig>(StringComparer.OrdinalIgnoreCase);
+
+        if (McpServers != null)
+        {
+            foreach (var e in McpServers)
+            {
+                if (e == null || !e.Enabled || string.IsNullOrWhiteSpace(e.Name)) continue;
+                var cfg = ToSdkConfig(e);
+                if (cfg != null)
+                    dict[e.Name.Trim()] = cfg;
+            }
+        }
+
+        var disabled = new HashSet<string>(
+            McpDisabledDiscovered ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+        foreach (var e in DiscoverMcpServers())
+        {
+            if (disabled.Contains(e.Name.Trim())) continue;
+            var cfg = ToSdkConfig(e);
+            if (cfg == null) continue;
+            dict[e.Name.Trim()] = cfg;
+            EmitStatus($"[MCP] adopted '{e.Name.Trim()}' from {e.SourcePath} ({(e.IsHttp ? "http" : "stdio")})");
+        }
+
+        return dict.Count > 0 ? dict : null;
+    }
+
+    /// <summary>
+    /// Converts a single <see cref="McpServerEntry"/> to its SDK config, or null
+    /// when the entry is incomplete for its transport (no url / no command).
+    /// </summary>
+    private static McpServerConfig? ToSdkConfig(McpServerEntry e)
+    {
+        if (e.IsHttp)
+        {
+            if (string.IsNullOrWhiteSpace(e.Url)) return null;
+            var http = new McpHttpServerConfig { Url = e.Url.Trim() };
+            if (e.Headers != null && e.Headers.Count > 0)
+                http.Headers = new Dictionary<string, string>(e.Headers);
+            return http;
+        }
+
+        if (string.IsNullOrWhiteSpace(e.Command)) return null;
+        var stdio = new McpStdioServerConfig { Command = e.Command.Trim() };
+        if (e.Args != null && e.Args.Count > 0)
+            stdio.Args = new List<string>(e.Args);
+        if (e.Env != null && e.Env.Count > 0)
+            stdio.Env = new Dictionary<string, string>(e.Env);
+        if (!string.IsNullOrWhiteSpace(e.WorkingDirectory))
+            stdio.WorkingDirectory = e.WorkingDirectory.Trim();
+        return stdio;
+    }
+
     public bool IsConnected => _client != null && _isConnected;
 
     // ── Reference cache (populated by LoadTier* during session creation) ────
@@ -922,6 +1091,8 @@ public sealed class CopilotService : IAsyncDisposable
             OnPermissionRequest = BuildPermissionHandler(),
             OnUserInputRequest = BuildUserInputHandler(),
             SystemMessage = BuildSystemMessage(),
+            ToolSearch = BuildToolSearchConfig(),
+            McpServers = BuildMcpServers(),
         });
 
         _mainSession = session;
@@ -1105,6 +1276,8 @@ public sealed class CopilotService : IAsyncDisposable
                     OnPermissionRequest = BuildPermissionHandler(),
                     OnUserInputRequest = BuildUserInputHandler(),
                     SystemMessage = BuildSystemMessage(),
+                    ToolSearch = BuildToolSearchConfig(),
+                    McpServers = BuildMcpServers(),
                 });
 
                 _mainSession = session;
@@ -1144,6 +1317,8 @@ public sealed class CopilotService : IAsyncDisposable
             SystemMessage = BuildSystemMessage(),
             CustomAgents     = agents.Count    > 0 ? agents    : null,
             SkillDirectories = skillDirs.Count > 0 ? skillDirs : null,
+            ToolSearch       = BuildToolSearchConfig(),
+            McpServers       = BuildMcpServers(),
         });
 
         _mainSession = session;
@@ -2131,6 +2306,30 @@ public sealed class CopilotService : IAsyncDisposable
                 // Cache SDK-registered slash commands for the main session only.
                 if (sessionId == _mainSession?.SessionId)
                     _cachedSdkCommands = cmds.Data.Commands;
+                break;
+
+            case SessionMcpServersLoadedEvent mcpLoaded:
+                // Surface the outcome of loading the configured MCP servers so the
+                // user can see which came up (and why any failed). Main session
+                // only, to avoid duplicate lines from sub-agents.
+                if (sessionId == _mainSession?.SessionId && mcpLoaded.Data?.Servers != null)
+                {
+                    foreach (var srv in mcpLoaded.Data.Servers)
+                    {
+                        var transport = srv.Transport?.Value;
+                        var t = string.IsNullOrEmpty(transport) ? "" : $" ({transport})";
+                        var err = string.IsNullOrEmpty(srv.Error) ? "" : $" - {srv.Error}";
+                        EmitStatus($"[MCP] {srv.Name}{t}: {srv.Status.Value ?? "unknown"}{err}");
+                    }
+                }
+                break;
+
+            case SessionMcpServerStatusChangedEvent mcpStatus:
+                if (sessionId == _mainSession?.SessionId && mcpStatus.Data != null)
+                {
+                    var err = string.IsNullOrEmpty(mcpStatus.Data.Error) ? "" : $" - {mcpStatus.Data.Error}";
+                    EmitStatus($"[MCP] {mcpStatus.Data.ServerName}: {mcpStatus.Data.Status.Value ?? "unknown"}{err}");
+                }
                 break;
 
             case PermissionRequestedEvent:

@@ -53,6 +53,7 @@ partial class MainForm
         contextMenuOptions = new ContextMenuStrip(components);
         menuOptionAutoApprove = new ToolStripMenuItem();
         menuOptionFleet = new ToolStripMenuItem();
+        menuOptionToolSearch = new ToolStripMenuItem();
         menuSessionCaveman = new ToolStripMenuItem();
         menuOptionLocalFilter = new ToolStripMenuItem();
         menuSessionShowSteps = new ToolStripMenuItem();
@@ -85,6 +86,7 @@ partial class MainForm
         menuToolsSeparator2 = new ToolStripSeparator();
         menuToolsPermissions = new ToolStripMenuItem();
         menuToolsLocalSettings = new ToolStripMenuItem();
+        menuToolsMcpServers = new ToolStripMenuItem();
         menuHelp = new ToolStripMenuItem();
         menuHelpShow = new ToolStripMenuItem();
         menuHelpAbout = new ToolStripMenuItem();
@@ -456,7 +458,7 @@ partial class MainForm
         contextMenuOptions.BackColor = Color.FromArgb(56, 56, 56);
         contextMenuOptions.ForeColor = Color.FromArgb(218, 218, 218);
         contextMenuOptions.ImageScalingSize = new Size(32, 32);
-        contextMenuOptions.Items.AddRange(new ToolStripItem[] { menuOptionAutoApprove, menuOptionFleet, menuSessionCaveman, menuOptionLocalFilter, menuSessionShowSteps });
+        contextMenuOptions.Items.AddRange(new ToolStripItem[] { menuOptionAutoApprove, menuOptionFleet, menuOptionToolSearch, menuSessionCaveman, menuOptionLocalFilter, menuSessionShowSteps });
         contextMenuOptions.Name = "contextMenuOptions";
         contextMenuOptions.Size = new Size(183, 114);
         // 
@@ -479,6 +481,16 @@ partial class MainForm
         menuOptionFleet.Size = new Size(182, 22);
         menuOptionFleet.Text = "&Fleet mode";
         menuOptionFleet.ToolTipText = "Activate Fleet mode — Copilot spawns and coordinates multiple sub-agents to work in parallel on complex tasks";
+        // 
+        // menuOptionToolSearch
+        // 
+        menuOptionToolSearch.BackColor = Color.FromArgb(56, 56, 56);
+        menuOptionToolSearch.CheckOnClick = true;
+        menuOptionToolSearch.ForeColor = Color.FromArgb(218, 218, 218);
+        menuOptionToolSearch.Name = "menuOptionToolSearch";
+        menuOptionToolSearch.Size = new Size(182, 22);
+        menuOptionToolSearch.Text = "&Tool Search";
+        menuOptionToolSearch.ToolTipText = "Defer MCP and external tools beyond the threshold behind the built-in tool search instead of pre-loading every tool into each prompt. Recommended when connecting multiple MCP servers.";
         // 
         // menuSessionCaveman
         // 
@@ -672,7 +684,7 @@ partial class MainForm
         // 
         // menuTools
         // 
-        menuTools.DropDownItems.AddRange(new ToolStripItem[] { menuToolsPowershell, menuToolsExplorer, menuToolsVSCode, menuToolsSeparator1, menuToolsSkillTree, menuToolsSkillSources, menuToolsBrowseCatalog, menuToolsSeparator2, menuToolsPermissions, menuToolsLocalSettings });
+        menuTools.DropDownItems.AddRange(new ToolStripItem[] { menuToolsPowershell, menuToolsExplorer, menuToolsVSCode, menuToolsSeparator1, menuToolsSkillTree, menuToolsSkillSources, menuToolsBrowseCatalog, menuToolsSeparator2, menuToolsPermissions, menuToolsLocalSettings, menuToolsMcpServers });
         menuTools.ForeColor = Color.FromArgb(218, 218, 218);
         menuTools.Name = "menuTools";
         menuTools.Size = new Size(47, 20);
@@ -763,6 +775,15 @@ partial class MainForm
         menuToolsLocalSettings.Size = new Size(222, 22);
         menuToolsLocalSettings.Text = "\U0001f9e0 Local LLM &settings...";
         menuToolsLocalSettings.ToolTipText = "Choose the Ollama server (localhost or a machine on your network by host/IP), model, and answer-locally confidence threshold.";
+        // 
+        // menuToolsMcpServers
+        // 
+        menuToolsMcpServers.BackColor = Color.FromArgb(56, 56, 56);
+        menuToolsMcpServers.ForeColor = Color.FromArgb(218, 218, 218);
+        menuToolsMcpServers.Name = "menuToolsMcpServers";
+        menuToolsMcpServers.Size = new Size(222, 22);
+        menuToolsMcpServers.Text = "\U0001f50c MCP &Servers...";
+        menuToolsMcpServers.ToolTipText = "Add, edit, or remove local (stdio) and HTTP MCP servers attached to every session. Changes take effect on the next session.";
         // 
         // menuHelp
         // 
@@ -916,6 +937,7 @@ partial class MainForm
     private System.Windows.Forms.ToolStripSeparator menuToolsSeparator2;
     private System.Windows.Forms.ToolStripMenuItem menuToolsPermissions;
     private System.Windows.Forms.ToolStripMenuItem menuToolsLocalSettings;
+    private System.Windows.Forms.ToolStripMenuItem menuToolsMcpServers;
     private System.Windows.Forms.ToolStripMenuItem menuSession;
     private System.Windows.Forms.ToolStripMenuItem menuSessionNew;
     private System.Windows.Forms.ToolStripSeparator menuSessionSeparatorNew;
@@ -951,6 +973,7 @@ partial class MainForm
     private System.Windows.Forms.ContextMenuStrip contextMenuOptions;
     private System.Windows.Forms.ToolStripMenuItem menuOptionAutoApprove;
     private System.Windows.Forms.ToolStripMenuItem menuOptionFleet;
+    private System.Windows.Forms.ToolStripMenuItem menuOptionToolSearch;
     private System.Windows.Forms.Label labelModel;
     private System.Windows.Forms.ComboBox comboBoxModel;
     private System.Windows.Forms.Label labelMode;

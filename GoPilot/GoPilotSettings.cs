@@ -87,6 +87,37 @@ internal sealed class GoPilotSettings
 	public double LocalFilterThreshold { get; set; } = 0.85;
 
 	/// <summary>
+	/// When true, GoPilot enables the runtime's tool-search behaviour so MCP and
+	/// external tools beyond <see cref="ToolSearchDeferThreshold"/> are deferred
+	/// behind the built-in <c>tool_search_tool</c> instead of being pre-loaded
+	/// into every prompt. Defaults to true to match the runtime default.
+	/// Persisted under <c>[ToolSearch]</c> as <c>Enabled=true|false</c>.
+	/// </summary>
+	public bool ToolSearchEnabled { get; set; } = true;
+
+	/// <summary>
+	/// Tool count above which MCP and external tools are deferred behind tool
+	/// search. Mirrors the runtime default of 30. Persisted under
+	/// <c>[ToolSearch]</c> as <c>DeferThreshold=</c>.
+	/// </summary>
+	public int ToolSearchDeferThreshold { get; set; } = 30;
+
+	/// <summary>
+	/// User-configured MCP servers wired into every session GoPilot creates or
+	/// resumes. Persisted under <c>[McpServers]</c> as one base64-encoded JSON
+	/// token per <c>Server=</c> line (see <see cref="McpServerEntry.Encode"/>).
+	/// </summary>
+	public List<McpServerEntry> McpServers { get; set; } = new();
+
+	/// <summary>
+	/// Names of servers discovered from <c>.mcp.json</c> files that the user has
+	/// switched off in the MCP Servers manager. Discovered servers are otherwise
+	/// enabled by default. Persisted under <c>[McpServers]</c> as one
+	/// <c>Disabled=</c> line per name.
+	/// </summary>
+	public List<string> McpDisabledDiscovered { get; set; } = new();
+
+	/// <summary>
 	/// Last selected model id (e.g. <c>claude-opus-4.6</c>). Empty when no
 	/// preference has been recorded yet; in that case
 	/// <see cref="MainForm.PopulateModelsAsync"/> falls back to its
@@ -203,6 +234,29 @@ internal sealed class GoPilotSettings
 							break;
 					}
 				}
+				else if (section == "toolsearch")
+				{
+					switch (key)
+					{
+						case "enabled": settings.ToolSearchEnabled = ParseBool(val); break;
+						case "deferthreshold":
+							if (int.TryParse(val, System.Globalization.NumberStyles.Integer,
+									System.Globalization.CultureInfo.InvariantCulture, out var dt) && dt > 0)
+								settings.ToolSearchDeferThreshold = dt;
+							break;
+					}
+				}
+				else if (section == "mcpservers" && key == "server")
+				{
+					var entry = McpServerEntry.TryDecode(val);
+					if (entry != null)
+						settings.McpServers.Add(entry);
+				}
+				else if (section == "mcpservers" && key == "disabled")
+				{
+					if (!settings.McpDisabledDiscovered.Contains(val, StringComparer.OrdinalIgnoreCase))
+						settings.McpDisabledDiscovered.Add(val);
+				}
 				else if (section == "session")
 				{
 					switch (key)
@@ -269,6 +323,25 @@ internal sealed class GoPilotSettings
 		sb.Append($"Endpoint={LocalFilterEndpoint}\r\n");
 		sb.Append($"Model={LocalFilterModel}\r\n");
 		sb.Append($"Threshold={LocalFilterThreshold.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}\r\n");
+
+		sb.Append("\r\n[ToolSearch]\r\n");
+		sb.Append($"Enabled={(ToolSearchEnabled ? "true" : "false")}\r\n");
+		sb.Append($"DeferThreshold={ToolSearchDeferThreshold.ToString(System.Globalization.CultureInfo.InvariantCulture)}\r\n");
+
+		sb.Append("\r\n[McpServers]\r\n");
+		var disabledSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		foreach (var name in McpDisabledDiscovered)
+		{
+			if (string.IsNullOrWhiteSpace(name)) continue;
+			var trimmed = name.Trim();
+			if (!disabledSeen.Add(trimmed)) continue;
+			sb.Append($"Disabled={trimmed}\r\n");
+		}
+		foreach (var srv in McpServers)
+		{
+			if (srv == null || string.IsNullOrWhiteSpace(srv.Name)) continue;
+			sb.Append($"Server={srv.Encode()}\r\n");
+		}
 
 		sb.Append("\r\n[Session]\r\n");
 		sb.Append($"Model={LastModel}\r\n");

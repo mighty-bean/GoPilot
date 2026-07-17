@@ -32,6 +32,11 @@ internal static class OptionIconRenderer
     public static readonly Color LocalFilterSquare = Color.FromArgb(150, 110, 210);
     public const string LocalFilterGlyph = "\U0001F9E0";
 
+    // Tool Search badge (colour-square only, like the Local LLM filter -- no
+    // embedded PNG). Teal square with a magnifying-glass glyph.
+    public static readonly Color ToolSearchSquare = Color.FromArgb(60, 160, 175);
+    public const string ToolSearchGlyph = "\U0001F50D";
+
     // Colours used only when the embedded PNG cannot be loaded.
     public static readonly Color AutoApproveSquare = Color.FromArgb(215,  75,  75);
     public static readonly Color FleetSquare       = Color.FromArgb(100, 160, 220);
