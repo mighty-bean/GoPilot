@@ -693,13 +693,27 @@ public sealed class CopilotService : IAsyncDisposable
 
     /// <summary>
     /// Starts the client if needed and returns the available model IDs from the SDK.
-    /// Returns an empty list on any error (e.g., not authenticated); fires
-    /// <see cref="ConnectionStateChanged"/> with the error message so the UI can surface it.
+    /// When a local provider is enabled, queries the local endpoint instead of
+    /// attempting to start the cloud CLI client. Returns an empty list on any
+    /// error and fires <see cref="ConnectionStateChanged"/> with the error so
+    /// the UI can surface a relevant message.
     /// </summary>
     public async Task<IReadOnlyList<string>> ListModelsAsync()
     {
         try
         {
+            // If configured to use a local OpenAI-compatible provider (e.g. Lemonade),
+            // enumerate its models and avoid touching the cloud Copilot CLI entirely.
+            if (UseLocalProvider)
+            {
+                var local = await ListLocalProviderModelsAsync();
+                _currentMaxPromptTokens = LookupMaxPromptTokens(ActiveModel);
+                return local
+                    .Select(m => m.Id)
+                    .Where(id => !string.IsNullOrEmpty(id))
+                    .ToList();
+            }
+
             await EnsureStartedAsync();
             var models = await _client!.ListModelsAsync();
 
