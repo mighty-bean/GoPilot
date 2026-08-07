@@ -1846,11 +1846,26 @@ public partial class MainForm : Form
         {
             // Replace context-meter with an explanatory message
             toolStripProgressBarContext.Visible = false;
+            toolStripStatusLabelContext.Visible = true;
             toolStripStatusLabelContext.Text = "Free tier";
             toolStripStatusLabelContext.ToolTipText = "Using free Copilot tier — UI features limited";
         }
+        else if (_copilot.UseLocalProvider && max <= 0)
+        {
+            // Local provider didn't report prompt-window limits: hide the context meter and label entirely
+            toolStripProgressBarContext.Visible = false;
+            toolStripStatusLabelContext.Visible = false;
+            toolStripStatusLabelContext.Text = string.Empty;
+            toolStripStatusLabelContext.ToolTipText = string.Empty;
+            toolStripStatusLabelAic.Visible = false;
+            toolTipMain.SetToolTip(statusStrip, string.Empty);
+        }
         else
         {
+            // Ensure the meter and label are visible when limits are available (including non-local providers)
+            toolStripStatusLabelContext.Visible = true;
+            toolStripProgressBarContext.Visible = true;
+            toolStripStatusLabelAic.Visible = true;
             toolStripStatusLabelContext.Text = text;
             toolStripStatusLabelContext.ForeColor = color;
             toolStripProgressBarContext.Value = barValue;

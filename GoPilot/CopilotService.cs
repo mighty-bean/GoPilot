@@ -707,7 +707,39 @@ public sealed class CopilotService : IAsyncDisposable
             if (UseLocalProvider)
             {
                 var local = await ListLocalProviderModelsAsync();
+                // Ensure the prompt-meter has the best-known denominator for the active model.
                 _currentMaxPromptTokens = LookupMaxPromptTokens(ActiveModel);
+
+                // If we just learned limits, log them once so the UI can show a summary.
+                if (!_modelLimitsLogged && _modelPromptLimits.Count > 0)
+                {
+                    _modelLimitsLogged = true;
+                    var summary = string.Join(", ", _modelPromptLimits
+                        .OrderBy(kvp => kvp.Key)
+                        .Select(kvp => $"{kvp.Key}={FormatTokensShort(kvp.Value)}"));
+                    EmitStatus($"Local model prompt limits loaded: {summary}");
+                }
+                else if (_modelPromptLimits.Count == 0)
+                {
+                    // Local provider returned models but none reported a context-window.
+                    // Surface a clear, actionable connection status so the user isn't
+                    // confused by an inactive context meter.
+                    // Local provider returned models but none reported a context-window.
+                    // Keep the statusStrip short — show a brief connection state and place
+                    // the longer, actionable explanation in the scrolling output via EmitStatus.
+                    ConnectionStateChanged?.Invoke(this, "Connected");
+                    EmitStatus("Local provider did not report prompt-window limits; context meter disabled.");
+                }
+
+                // Immediately update the UI meter with whatever we know so the
+                // status bar works for local OpenAI-compatible providers as well.
+                ContextUsageChanged?.Invoke(this, new ContextUsageEventArgs
+                {
+                    SessionId = _mainSession?.SessionId ?? string.Empty,
+                    InputTokens = _currentInputTokens,
+                    MaxPromptTokens = _currentMaxPromptTokens,
+                });
+
                 return local
                     .Select(m => m.Id)
                     .Where(id => !string.IsNullOrEmpty(id))
