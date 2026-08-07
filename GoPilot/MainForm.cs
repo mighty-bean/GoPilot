@@ -90,6 +90,14 @@ public partial class MainForm : Form
     // the next DispatchPromptAsync runs an automatic summary-and-restart before
     // forwarding the user's prompt, so context survives the option change.
     private string? _pendingHandoffReason = null;
+    // True after the AI Service dialog has connected the client and enumerated
+    // models, but before the user has clicked Connect to actually create the
+    // session. While true the Send button reads "Connect" and its click creates
+    // the session instead of sending a prompt.
+    private bool _awaitingConnect = false;
+    // Workspace folder captured for the pending Connect (used to offer the
+    // README once the session is created).
+    private string? _pendingConnectFolder = null;
     private const int AutoRefreshThresholdPercent = 85;
     private GoPilotSettings _settings = new();
     private readonly SessionMetadataStore _sessionStore = new();
@@ -124,6 +132,11 @@ public partial class MainForm : Form
         InitializeOptionIcons();
         WireUpEvents();
 
+        // Start with the prompt soft-disabled (dark read-only) until a session
+        // is connected. A natively disabled RichTextBox paints a bright system
+        // grey that clashes with the dark theme, so we gate input via ReadOnly.
+        richTextBoxPrompt.SetInputEnabled(false);
+
         // Load persisted settings and sync with service
         _settings = GoPilotSettings.Load();
         _copilot.SkillTreeFolders = _settings.SkillTreeFolders;
@@ -139,6 +152,14 @@ public partial class MainForm : Form
         _localFilter.Threshold = _settings.LocalFilterThreshold;
         _localFilter.Enabled   = _settings.LocalFilterEnabled;
         menuOptionLocalFilter.Checked = _settings.LocalFilterEnabled;
+        // AI service (cloud Copilot vs local OpenAI-compatible provider).
+        // The endpoint/key are restored so the New Session dialog shows the
+        // previous choice as its initial selection. The provider itself stays
+        // cloud until the dialog (new session) or metadata (resume) selects it,
+        // so the pre-session cloud model list and its preferences are consistent.
+        _copilot.UseLocalProvider      = false;
+        _copilot.LocalProviderEndpoint = _settings.LocalProviderEndpoint;
+        _copilot.LocalProviderApiKey   = _settings.LocalProviderApiKey;
         // Restore the last-used Auto-approve / Fleet toggles before the mode
         // combo is populated so ApplyModeChangeAsync's "Autopilot implies
         // auto-approve" rule sees the correct starting state. The CheckedChanged
@@ -191,7 +212,7 @@ public partial class MainForm : Form
 
     private void WireUpEvents()
     {
-        buttonSend.Click += async (_, _) => await SendPromptAsync();
+        buttonSend.Click += async (_, _) => await OnSendOrConnectAsync();
         buttonStop.Click += async (_, _) => await StopAsync();
         menuReferencesAddFile.Click += ButtonAddFile_Click;
         menuReferencesAddFolder.Click += ButtonAddFolder_Click;
@@ -221,9 +242,29 @@ public partial class MainForm : Form
 
         this.Shown += async (_, _) =>
         {
+            // Display loading message first
+            AppendOutput("loading... please wait.\r\n", AppTheme.ColorMeta);
+            panelActions.Enabled = false;
+            
             await InitializeWebViewAsync();
             await CheckForUpdatesAsync();
             await PopulateModelsAsync();
+
+            // Show SDK and CLI status
+            var sdkStatus = _copilot.IsConnected ? "Connected" : "Not connected";
+            AppendOutput($"SDK: {sdkStatus}\r\n", AppTheme.ColorMeta);
+            
+            var cliStatus = _copilot.IsConnected ? "Ready" : "Not ready";
+            AppendOutput($"CLI: {cliStatus}\r\n", AppTheme.ColorMeta);
+
+            // Show final ready message
+            AppendOutput("Ready. Use the Session menu to start or resume a session.\r\n", AppTheme.ColorMeta);
+
+            // panelActions stays disabled until an AI service is connected and
+            // has populated the Model/Mode/Effort controls. Enabling happens in
+            // ConnectToFolderAsync (new session) and ResumePersistedSessionAsync
+            // (resume). Until then the user has nothing valid to pick.
+            panelActions.Enabled = false;
 
             if (!string.IsNullOrEmpty(_startupFolder))
                 await ConnectToFolderAsync(_startupFolder);
@@ -838,7 +879,12 @@ public partial class MainForm : Form
     {
         if (!_uiReady) return;
 
-        _settings.LastModel = comboBoxModel.SelectedItem?.ToString() ?? string.Empty;
+        // Keep cloud and local model preferences separate so switching services
+        // does not clobber the other's last-used model.
+        if (_copilot.UseLocalProvider)
+            _settings.LocalProviderModel = comboBoxModel.SelectedItem?.ToString() ?? string.Empty;
+        else
+            _settings.LastModel = comboBoxModel.SelectedItem?.ToString() ?? string.Empty;
         _settings.LastMode = comboBoxMode.SelectedItem?.ToString() ?? string.Empty;
         _settings.LastEffort = comboBoxEffort.Enabled
             ? (comboBoxEffort.SelectedItem?.ToString() ?? string.Empty)
@@ -1094,17 +1140,18 @@ public partial class MainForm : Form
 
         if (string.IsNullOrEmpty(prompt) && pastedImages.Count == 0) return;
 
-        // Ctrl+Enter bypasses buttonSend.Enabled, so re-check the workspace
-        // here. Sending without a workspace would create a session whose ID
-        // falls back to the literal "GoPilot" prefix and whose
+        // Ctrl+Enter bypasses buttonSend.Enabled, so re-check that a live session
+        // exists here. Sending without a connection (e.g. after a failed connect)
+        // would hit a dead client; sending without a workspace would create a
+        // session whose ID falls back to the literal "GoPilot" prefix and whose
         // workspaceFolder is permanently blank in gopilot-sessions.json.
-        if (string.IsNullOrEmpty(_copilot.WorkingDirectory))
+        if (!_copilot.IsConnected || string.IsNullOrEmpty(_copilot.WorkingDirectory))
         {
             MessageBox.Show(this,
-                "Open a workspace folder before sending a prompt.\r\n\r\n" +
+                "Start or resume a session before sending a prompt.\r\n\r\n" +
                 "Use Session > New Session... to pick a folder, or Session > " +
                 "Past Sessions... to resume one.",
-                "No Workspace Open",
+                "Not Connected",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
@@ -1443,6 +1490,16 @@ public partial class MainForm : Form
         IReadOnlyList<string>? extraAttachments = null,
         (int OriginalChars, int CavemanChars)? cavemanStats = null)
     {
+        // No session exists until the user presses Connect. Block any prompt
+        // dispatch (including quick commands like Summarize) until then.
+        if (_awaitingConnect)
+        {
+            MessageBox.Show(this,
+                "Press Connect to start the session before sending a prompt.",
+                "Not Connected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
         _copilot.ActiveMode = comboBoxMode.SelectedItem?.ToString() ?? "Standard";
         _copilot.AutoApprove = menuOptionAutoApprove.Checked;
         _copilot.FleetMode = menuOptionFleet.Checked;
@@ -2289,7 +2346,30 @@ public partial class MainForm : Form
 
     private async Task ConnectToFolderAsync(string folderPath)
     {
-        // If already connected, tear down first so the new CWD takes effect
+        if (!EnsureFolderTrusted(folderPath)) return;
+
+        // Prompt for the AI service (cloud Copilot vs local OpenAI-compatible
+        // provider) and the local Filter LLM before connecting. The previous
+        // choices are shown as the initial selections.
+        using (var svc = new AiServiceDialog(
+            _settings.AiServiceProvider,
+            _settings.LocalProviderEndpoint,
+            _settings.LocalProviderApiKey,
+            _settings.LocalFilterEnabled,
+            _settings.LocalFilterEndpoint,
+            _settings.LocalFilterModel,
+            _settings.LocalFilterThreshold))
+        {
+            if (svc.ShowDialog(this) != DialogResult.OK) return;
+            ApplyAiServiceChoice(svc);
+
+            // The user confirmed the AI service, so enable the actions bar now
+            // and let them pick Model/Mode/Effort while the client connects and
+            // populates the model list, then press Connect to start the session.
+            panelActions.Enabled = true;
+        }
+
+        // Tear down any existing connection first so the new CWD/provider takes effect.
         if (_copilot.IsConnected)
         {
             await _copilot.DisposeAsync();
@@ -2297,30 +2377,196 @@ public partial class MainForm : Form
         }
 
         ResetSessionTrackingState();
-
-        if (!EnsureFolderTrusted(folderPath)) return;
+        _awaitingConnect = false;
+        _pendingConnectFolder = folderPath;
 
         _copilot.WorkingDirectory = folderPath;
         menuSessionNew.Enabled = false;
         toolStripStatusLabelSession.Text = folderPath;
         UpdateTitleBar(folderPath);
+        
+        // Disable prompt textbox at the start of session creation
+        richTextBoxPrompt.SetInputEnabled(false);
 
         try
         {
-            // Sync UI state to service before session creation so the system message is correct
+            // Sync UI state to the service so the enumerated model list and the
+            // eventual system message are correct.
             _copilot.ActiveMode = comboBoxMode.SelectedItem?.ToString() ?? "Standard";
             _copilot.AutoApprove = menuOptionAutoApprove.Checked;
             _copilot.FleetMode = menuOptionFleet.Checked;
 
-            // First action of a new session: let the user review/curate the MCP
-            // servers discovered across the search folders (workspace, user, app)
-            // before the session is created, so unwanted servers never load.
-            ReviewMcpServersBeforeSession();
+            // Phase 1: start the CLI client (no session yet) and enumerate the
+            // available models from the chosen service so the user can pick
+            // options before pressing Connect.
+            await _copilot.EnsureStartedAsync();
 
-            await _copilot.EnsureSessionAsync();
             var version = await _copilot.GetVersionAsync();
             if (!string.IsNullOrEmpty(version))
                 toolStripStatusLabelVersion.Text = $"v{version}";
+
+            if (_copilot.UseLocalProvider)
+                await PopulateLocalModelsAsync();
+            else
+                await PopulateModelsAsync();
+
+            // Bring the Filter LLM online in the background if enabled so the
+            // first send is not blocked on detection.
+            if (_localFilter.Enabled)
+                _ = InitLocalFilterAsync();
+
+            AppendOutput(
+                _copilot.UseLocalProvider
+                    ? $"[AI service: Local OpenAI-compatible server @ {_copilot.LocalProviderEndpoint}]\r\n"
+                    : "[AI service: GitHub Copilot (cloud)]\r\n",
+                AppTheme.ColorMeta);
+            AppendOutput(
+                "[Select your model and options, then press Connect to start the session.]\r\n\r\n",
+                AppTheme.ColorMeta);
+
+            // Gate session creation behind the Connect button.
+            _awaitingConnect = true;
+            SetSendButtonMode();
+            UpdateWorkingState();
+        }
+        catch (Exception ex)
+        {
+            // The service failed to come fully online -- the client may have
+            // started but model enumeration failed (e.g. a wrong API path or an
+            // unreachable host). Dispose so IsConnected is false and a retry
+            // reconnects from scratch, then return to the clean disconnected UI
+            // state so a stray Ctrl+Enter can't reach a half-started client.
+            try { await _copilot.DisposeAsync(); _copilot.Reset(); }
+            catch { /* best-effort cleanup */ }
+            EnterDisconnectedUiState();
+            MessageBox.Show(
+                $"Failed to connect to the AI service:\n\n{ex.Message}\n\n" +
+                "For Copilot, make sure 'copilot' is installed and authenticated " +
+                "(run 'copilot auth login'). For a local server, check the host, " +
+                "port, and API path.",
+                "Connection Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            menuSessionNew.Enabled = true;
+        }
+    }
+
+    /// <summary>
+    /// Persists the user's AI Service dialog choices to settings and mirrors
+    /// them onto the service and the local Filter LLM. Called before the client
+    /// is (re)started for a new session.
+    /// </summary>
+    private void ApplyAiServiceChoice(AiServiceDialog svc)
+    {
+        _settings.AiServiceProvider     = svc.Provider;
+        _settings.LocalProviderEndpoint = svc.LocalEndpoint;
+        _settings.LocalProviderApiKey   = svc.LocalApiKey;
+
+        _copilot.UseLocalProvider      = string.Equals(svc.Provider, "LocalOpenAI", StringComparison.OrdinalIgnoreCase);
+        _copilot.LocalProviderEndpoint = svc.LocalEndpoint;
+        _copilot.LocalProviderApiKey   = svc.LocalApiKey;
+
+        // Filter LLM enable/config.
+        _settings.LocalFilterEnabled   = svc.FilterEnabled;
+        _settings.LocalFilterEndpoint  = svc.FilterEndpoint;
+        _settings.LocalFilterModel     = svc.FilterModel;
+        _settings.LocalFilterThreshold = svc.FilterThreshold;
+        _localFilter.Enabled   = svc.FilterEnabled;
+        _localFilter.Endpoint  = svc.FilterEndpoint;
+        _localFilter.Model     = svc.FilterModel;
+        _localFilter.Threshold = svc.FilterThreshold;
+        menuOptionLocalFilter.Checked = svc.FilterEnabled;
+
+        try { _settings.Save(); } catch { /* best-effort persist */ }
+    }
+
+    /// <summary>
+    /// Routes the Send button (and Ctrl+Enter): while awaiting Connect it
+    /// creates the session; otherwise it sends the prompt as normal.
+    /// </summary>
+    private async Task OnSendOrConnectAsync()
+    {
+        if (_awaitingConnect)
+            await PerformConnectAsync();
+        else
+            await SendPromptAsync();
+    }
+
+    /// <summary>
+    /// Updates the Send button's caption/tooltip to reflect whether the next
+    /// click connects (creates the session) or sends a prompt.
+    /// </summary>
+    private void SetSendButtonMode()
+    {
+        if (_awaitingConnect)
+        {
+            buttonSend.Text = "Connect";
+            toolTipMain.SetToolTip(buttonSend, "Connect: start the session with the selected options (Ctrl+Enter)");
+            richTextBoxPrompt.SetInputEnabled(false);
+        }
+        else
+        {
+            buttonSend.Text = "\u25b6 Send";
+            toolTipMain.SetToolTip(buttonSend, "Send prompt to Copilot (Ctrl+Enter)");
+            richTextBoxPrompt.SetInputEnabled(true);
+        }
+    }
+
+    /// <summary>
+    /// Returns the toolbar, prompt, and status to the clean "no session" state
+    /// used at startup. Called from the connect/resume failure paths so a failed
+    /// attempt never leaves the UI half-connected (editable prompt, stale session
+    /// label), which could otherwise let a stray Ctrl+Enter reach a dead client.
+    /// </summary>
+    private void EnterDisconnectedUiState()
+    {
+        _awaitingConnect = false;
+        _pendingConnectFolder = null;
+        _mainSessionId = null;
+        panelActions.Enabled = false;
+        richTextBoxPrompt.SetInputEnabled(false);
+        buttonSend.Text = "\u25b6 Send";
+        buttonSend.Enabled = false;
+        buttonStop.Enabled = false;
+        menuSessionNew.Enabled = true;
+        toolStripStatusLabelSession.Text = "";
+        toolStripStatusLabelConnection.Text = "Not connected";
+    }
+
+    /// <summary>
+    /// Phase 2 of the new-session flow: creates the main session with the
+    /// selected model/mode/options (and local provider when chosen), then runs
+    /// the post-session setup (scratchpad, tier reporting, README offer).
+    /// </summary>
+    private async Task PerformConnectAsync()
+    {
+        if (!_copilot.IsConnected || string.IsNullOrEmpty(_copilot.WorkingDirectory))
+            return;
+
+        _awaitingConnect = false;
+        SetSendButtonMode();
+        buttonSend.Enabled = false;
+        
+        // Make sure the prompt is enabled when we've successfully connected
+        richTextBoxPrompt.SetInputEnabled(true);
+
+        try
+        {
+            // Sync final option choices before the session is created.
+            _copilot.ActiveMode = comboBoxMode.SelectedItem?.ToString() ?? "Standard";
+            _copilot.AutoApprove = menuOptionAutoApprove.Checked;
+            _copilot.FleetMode = menuOptionFleet.Checked;
+            _copilot.ActiveModel = comboBoxModel.SelectedItem?.ToString() ?? _copilot.ActiveModel;
+            _copilot.ActiveReasoningEffort = comboBoxEffort.Enabled
+                ? comboBoxEffort.SelectedItem?.ToString()
+                : null;
+
+            // Let the user review/curate discovered MCP servers before the
+            // session is created, so unwanted servers never load.
+            ReviewMcpServersBeforeSession();
+
+            await _copilot.EnsureSessionAsync();
 
             if (_copilot.ScratchpadPath != null)
                 AppendOutput($"[Scratchpad: {_copilot.ScratchpadPath}]\r\n", AppTheme.ColorMeta);
@@ -2359,21 +2605,87 @@ public partial class MainForm : Form
 
             AppendOutput("\r\n", AppTheme.ColorMeta);
 
-            await OfferReadReadmeAsync(folderPath);
+            var folder2 = _pendingConnectFolder;
+            _pendingConnectFolder = null;
+            if (!string.IsNullOrEmpty(folder2))
+                await OfferReadReadmeAsync(folder2);
         }
         catch (Exception ex)
         {
-            menuSessionNew.Enabled = true;
+            // Session creation failed; revert to the awaiting-connect state so
+            // the user can adjust options and retry.
+            _awaitingConnect = true;
+            SetSendButtonMode();
             MessageBox.Show(
-                $"Failed to connect to Copilot CLI:\n\n{ex.Message}\n\n" +
-                "Make sure 'copilot' is installed and authenticated (run 'copilot auth login').",
-                "Connection Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                $"Failed to start the session:\n\n{ex.Message}",
+                "Connect Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
         {
-            menuSessionNew.Enabled = true;
+            UpdateWorkingState();
+            // Enable the prompt only when the session is live. On failure we
+            // revert to awaiting-Connect, where the prompt must stay read-only.
+            richTextBoxPrompt.SetInputEnabled(!_awaitingConnect);
         }
     }
+
+    /// <summary>
+    /// Enumerates models advertised by the active local OpenAI-compatible
+    /// provider and populates comboBoxModel. Selects the last-used local model
+    /// when still advertised; otherwise the first entry. Reasoning-effort
+    /// controls auto-disable because local models do not advertise effort
+    /// support through the SDK.
+    /// </summary>
+    private async Task PopulateLocalModelsAsync()
+    {
+        var models = await _copilot.ListLocalProviderModelsAsync();
+        var ids = models.Select(m => m.Id).Where(id => !string.IsNullOrEmpty(id)).ToList();
+
+        // Fall back to the last-configured model id if the endpoint returned
+        // nothing (e.g. a server that does not implement /models).
+        if (ids.Count == 0 && !string.IsNullOrWhiteSpace(_settings.LocalProviderModel))
+            ids.Add(_settings.LocalProviderModel);
+
+        if (ids.Count == 0)
+        {
+            AppendOutput(
+                "\u26a0\ufe0f No models were returned by the local server. Check the endpoint and API path.\r\n\r\n",
+                AppTheme.ColorError);
+        }
+
+        comboBoxModel.BeginUpdate();
+        try
+        {
+            comboBoxModel.Items.Clear();
+            foreach (var id in ids)
+                comboBoxModel.Items.Add(id);
+        }
+        finally
+        {
+            comboBoxModel.EndUpdate();
+        }
+
+        if (ids.Count > 0)
+        {
+            var preferred = _settings.LocalProviderModel;
+            var idx = string.IsNullOrWhiteSpace(preferred)
+                ? 0
+                : Math.Max(0, ids.FindIndex(m => m.Equals(preferred, StringComparison.OrdinalIgnoreCase)));
+            comboBoxModel.SelectedIndex = idx;
+        }
+
+        // Local providers don't advertise reasoning effort; the meter uses the
+        // per-model context window captured during enumeration when available.
+        bIsFreeTierAutoOnly = false;
+        labelEffort.Visible = false;
+        comboBoxEffort.Visible = false;
+        toolStripProgressBarContext.Visible = true;
+        toolStripStatusLabelContext.Text = string.Empty;
+        toolStripStatusLabelContext.ToolTipText = string.Empty;
+
+        _uiReady = true;
+    }
+
 
     // ── Session persistence ──────────────────────────────────────────────────
 
@@ -2403,6 +2715,9 @@ public partial class MainForm : Form
             Mode = comboBoxMode.SelectedItem?.ToString() ?? "Standard",
             Fleet = menuOptionFleet.Checked,
             AutoApprove = menuOptionAutoApprove.Checked,
+            AiServiceProvider = _copilot.UseLocalProvider ? "LocalOpenAI" : "Copilot",
+            LocalProviderEndpoint = _copilot.UseLocalProvider ? _copilot.LocalProviderEndpoint : "",
+            LocalProviderApiKey = _copilot.UseLocalProvider ? _copilot.LocalProviderApiKey : "",
             CreatedAt = existing?.CreatedAt is { } prior && prior != default
                 ? prior
                 : DateTime.Now,
@@ -2592,10 +2907,26 @@ public partial class MainForm : Form
                 workspace = folderDlg.SelectedPath;
             }
 
+            // Verify trust BEFORE mutating any UI or tearing down the current
+            // session, so declining the prompt leaves everything (the live
+            // session and the toolbar selections) exactly as it was.
+            if (!EnsureFolderTrusted(workspace)) return;
+
             // Restore UI settings from metadata before connecting
             if (metadata != null)
             {
-                // Restore model
+                // Restore the AI service (cloud vs local provider). Sessions
+                // created before local-provider support default to Copilot.
+                _copilot.UseLocalProvider =
+                    string.Equals(metadata.AiServiceProvider, "LocalOpenAI", StringComparison.OrdinalIgnoreCase);
+                if (_copilot.UseLocalProvider)
+                {
+                    _copilot.LocalProviderEndpoint = metadata.LocalProviderEndpoint;
+                    _copilot.LocalProviderApiKey   = metadata.LocalProviderApiKey;
+                }
+
+                // Restore model. For a local provider the enumerated cloud list
+                // won't contain the model, so add it to the combo if missing.
                 if (!string.IsNullOrEmpty(metadata.Model))
                 {
                     var modelIdx = comboBoxModel.Items.Cast<string>()
@@ -2603,8 +2934,11 @@ public partial class MainForm : Form
                         .Where(x => x.m.Equals(metadata.Model, StringComparison.OrdinalIgnoreCase))
                         .Select(x => (int?)x.i)
                         .FirstOrDefault();
+                    if (!modelIdx.HasValue && _copilot.UseLocalProvider)
+                        modelIdx = comboBoxModel.Items.Add(metadata.Model);
                     if (modelIdx.HasValue)
                         comboBoxModel.SelectedIndex = modelIdx.Value;
+                    _copilot.ActiveModel = metadata.Model;
                 }
 
                 // Restore mode
@@ -2623,6 +2957,19 @@ public partial class MainForm : Form
                 menuOptionFleet.Checked = metadata.Fleet;
                 menuOptionAutoApprove.Checked = metadata.AutoApprove;
             }
+            else
+            {
+                // No metadata: assume cloud Copilot so an unknown session never
+                // inherits a stale local-provider selection.
+                _copilot.UseLocalProvider = false;
+            }
+
+            // Effort is a cloud concept; hide it when resuming a local session.
+            if (_copilot.UseLocalProvider)
+            {
+                labelEffort.Visible = false;
+                comboBoxEffort.Visible = false;
+            }
 
             // Tear down existing connection and reconnect with the session's workspace
             if (_copilot.IsConnected)
@@ -2632,8 +2979,6 @@ public partial class MainForm : Form
             }
 
             ResetSessionTrackingState();
-
-            if (!EnsureFolderTrusted(workspace)) return;
 
             _copilot.WorkingDirectory = workspace;
             menuSessionNew.Enabled = false;
@@ -2658,9 +3003,24 @@ public partial class MainForm : Form
             await ReplaySessionHistoryAsync();
 
             AppendOutput("─────────── session resumed ───────────\r\n\r\n", AppTheme.ColorMeta);
+            
+            // When resuming a session, ensure buttonSend shows "Send" not "Connect"
+            _awaitingConnect = false;
+            SetSendButtonMode();
+
+            // The service is connected and the session is live, so the actions
+            // bar becomes usable.
+            panelActions.Enabled = true;
         }
         catch (Exception ex)
         {
+            // Resume failed after the previous session was torn down. The client
+            // may have started but the session-specific resume failed, leaving
+            // IsConnected true with no main session. Dispose so IsConnected is
+            // false, then reset to the clean disconnected UI state.
+            try { await _copilot.DisposeAsync(); _copilot.Reset(); }
+            catch { /* best-effort cleanup */ }
+            EnterDisconnectedUiState();
             AppendOutput($"\r\n❌ Resume failed: {ex.Message}\r\n\r\n", AppTheme.ColorError);
             MessageBox.Show(this,
                 $"Failed to resume session:\r\n\r\n{ex.Message}",
@@ -3244,7 +3604,7 @@ public partial class MainForm : Form
         {
             e.Handled = true;
             e.SuppressKeyPress = true;
-            _ = SendPromptAsync();
+            _ = OnSendOrConnectAsync();
         }
     }
 
@@ -4021,6 +4381,7 @@ public partial class MainForm : Form
         _streamingSessions.Clear();
         _toolStartPositions.Clear();
         _subAgentStartPositions.Clear();
+        _awaitingConnect = false; // Reset the flag when resetting session tracking state
         ClearSectionTrackers();
     }
 

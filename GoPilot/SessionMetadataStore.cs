@@ -27,6 +27,22 @@ internal sealed class SessionMetadataEntry
 	[JsonPropertyName("autoApprove")]
 	public bool AutoApprove { get; set; }
 
+	/// <summary>
+	/// AI service the session used: <c>Copilot</c> (default, cloud) or
+	/// <c>LocalOpenAI</c>. Absent on sessions created before local-provider
+	/// support, which correctly default to Copilot.
+	/// </summary>
+	[JsonPropertyName("aiServiceProvider")]
+	public string AiServiceProvider { get; set; } = "Copilot";
+
+	/// <summary>Local provider base URL (incl. API path) when <see cref="AiServiceProvider"/> is <c>LocalOpenAI</c>.</summary>
+	[JsonPropertyName("localProviderEndpoint")]
+	public string LocalProviderEndpoint { get; set; } = "";
+
+	/// <summary>Local provider API key when <see cref="AiServiceProvider"/> is <c>LocalOpenAI</c>.</summary>
+	[JsonPropertyName("localProviderApiKey")]
+	public string LocalProviderApiKey { get; set; } = "";
+
 	[JsonPropertyName("createdAt")]
 	public DateTime CreatedAt { get; set; }
 

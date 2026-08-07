@@ -298,6 +298,174 @@ public sealed class CopilotService : IAsyncDisposable
             DeferThreshold = ToolSearchDeferThreshold,
         };
 
+    // ── Local OpenAI-compatible provider (Lemonade / llama.cpp) ──────────────
+
+    /// <summary>
+    /// When true, GoPilot injects a per-session <see cref="ProviderConfig"/> so
+    /// the Copilot CLI runs its full agent loop against a local/LAN
+    /// OpenAI-compatible endpoint (e.g. Lemonade or llama.cpp) instead of the
+    /// GitHub Copilot cloud. All skill/agent/MCP/tool machinery is unchanged.
+    /// Provider is baked in at session creation/resume, so mid-session changes
+    /// require a new session.
+    /// </summary>
+    public bool UseLocalProvider { get; set; } = false;
+
+    /// <summary>
+    /// Base URL of the local provider including the API path, e.g.
+    /// <c>http://10.0.0.234:13305/api/v1</c>. Only consulted when
+    /// <see cref="UseLocalProvider"/> is true.
+    /// </summary>
+    public string LocalProviderEndpoint { get; set; } = string.Empty;
+
+    /// <summary>
+    /// API key forwarded to the local provider. Most local servers accept any
+    /// non-empty string; defaults to <c>lemonade</c>.
+    /// </summary>
+    public string LocalProviderApiKey { get; set; } = "lemonade";
+
+    // Shared HttpClient for local-provider model enumeration.
+    private static readonly HttpClient _localHttp = new() { Timeout = TimeSpan.FromSeconds(15) };
+
+    /// <summary>A model advertised by a local OpenAI-compatible endpoint.</summary>
+    public sealed class LocalModelInfo
+    {
+        public string Id { get; init; } = "";
+        /// <summary>Context-window / max-prompt tokens when the endpoint reports it; 0 otherwise.</summary>
+        public double MaxPromptTokens { get; init; }
+    }
+
+    /// <summary>
+    /// Builds the <see cref="ProviderConfig"/> attached to every session GoPilot
+    /// creates or resumes while a local provider is active, or null for the
+    /// cloud path (leaving the SDK on its default Copilot backend).
+    /// </summary>
+    private GitHub.Copilot.ProviderConfig? BuildProviderConfig()
+    {
+        if (!UseLocalProvider || string.IsNullOrWhiteSpace(LocalProviderEndpoint))
+            return null;
+
+        return new GitHub.Copilot.ProviderConfig
+        {
+            Type      = "openai",
+            WireApi   = "completions",
+            Transport = "http",
+            BaseUrl   = LocalProviderEndpoint.Trim(),
+            ApiKey    = string.IsNullOrWhiteSpace(LocalProviderApiKey) ? "local" : LocalProviderApiKey.Trim(),
+            ModelId   = ActiveModel,
+        };
+    }
+
+    /// <summary>
+    /// Builds the optional per-model capability list for the active local model.
+    /// Supplies the context-window ceiling (when known) so the CLI treats the
+    /// prompt window correctly and the meter has a denominator. Returns null for
+    /// the cloud path or when no ceiling is known.
+    /// </summary>
+    private IList<GitHub.Copilot.ProviderModelConfig>? BuildProviderModels()
+    {
+        if (!UseLocalProvider || string.IsNullOrWhiteSpace(ActiveModel))
+            return null;
+
+        var max = LookupMaxPromptTokens(ActiveModel);
+        if (max <= 0) return null;
+
+        return new List<GitHub.Copilot.ProviderModelConfig>
+        {
+            new GitHub.Copilot.ProviderModelConfig
+            {
+                Id                     = ActiveModel,
+                ModelId                = ActiveModel,
+                MaxPromptTokens        = (int)max,
+                MaxContextWindowTokens = (int)max,
+            },
+        };
+    }
+
+    /// <summary>
+    /// Enumerates the models advertised by the configured local provider by
+    /// GETting <c>{endpoint}/models</c>. Populates <see cref="_modelPromptLimits"/>
+    /// from any reported context-window field so the meter has a denominator.
+    /// Best-effort: returns an empty list on any failure and fires
+    /// <see cref="ConnectionStateChanged"/> with the error.
+    /// </summary>
+    public async Task<IReadOnlyList<LocalModelInfo>> ListLocalProviderModelsAsync()
+    {
+        var endpoint = LocalProviderEndpoint?.Trim();
+        if (string.IsNullOrWhiteSpace(endpoint))
+            return Array.Empty<LocalModelInfo>();
+
+        var url = endpoint.TrimEnd('/') + "/models";
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            if (!string.IsNullOrWhiteSpace(LocalProviderApiKey))
+                req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + LocalProviderApiKey.Trim());
+
+            using var resp = await _localHttp.SendAsync(req);
+            resp.EnsureSuccessStatusCode();
+            var json = await resp.Content.ReadAsStringAsync();
+
+            var models = ParseLocalModels(json);
+            foreach (var m in models)
+            {
+                if (m.MaxPromptTokens > 0)
+                    _modelPromptLimits[m.Id] = m.MaxPromptTokens;
+            }
+
+            _currentMaxPromptTokens = LookupMaxPromptTokens(ActiveModel);
+            return models;
+        }
+        catch (Exception ex)
+        {
+            ConnectionStateChanged?.Invoke(this, $"Local models unavailable: {ex.Message}");
+            return Array.Empty<LocalModelInfo>();
+        }
+    }
+
+    /// <summary>
+    /// Parses an OpenAI <c>/models</c> response into id + optional context
+    /// window. Tolerates the common context-length field names used by
+    /// Lemonade / llama.cpp / vLLM (<c>max_context_length</c>,
+    /// <c>context_length</c>, <c>max_model_len</c>, <c>ctx</c>).
+    /// </summary>
+    private static List<LocalModelInfo> ParseLocalModels(string json)
+    {
+        var result = new List<LocalModelInfo>();
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            var data = root.ValueKind == JsonValueKind.Array
+                ? root
+                : root.TryGetProperty("data", out var d) ? d : default;
+            if (data.ValueKind != JsonValueKind.Array) return result;
+
+            foreach (var item in data.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object) continue;
+                var id = item.TryGetProperty("id", out var idEl) ? idEl.GetString()
+                       : item.TryGetProperty("name", out var nEl) ? nEl.GetString()
+                       : null;
+                if (string.IsNullOrWhiteSpace(id)) continue;
+
+                double ctx = 0;
+                foreach (var field in new[] { "max_context_length", "context_length", "max_model_len", "ctx", "max_prompt_tokens" })
+                {
+                    if (item.TryGetProperty(field, out var cEl))
+                    {
+                        if (cEl.ValueKind == JsonValueKind.Number && cEl.TryGetDouble(out var cv)) { ctx = cv; break; }
+                        if (cEl.ValueKind == JsonValueKind.String && double.TryParse(cEl.GetString(),
+                                NumberStyles.Any, CultureInfo.InvariantCulture, out var cs)) { ctx = cs; break; }
+                    }
+                }
+
+                result.Add(new LocalModelInfo { Id = id!, MaxPromptTokens = ctx });
+            }
+        }
+        catch { /* best-effort; return what we have */ }
+        return result;
+    }
+
     /// <summary>
     /// User-configured MCP servers, mirrored from GoPilot's MCP Servers manager
     /// and persisted in gopilot.ini. The enabled entries are converted to SDK
@@ -831,7 +999,24 @@ public sealed class CopilotService : IAsyncDisposable
         if (ScratchpadPath != null)
             Directory.CreateDirectory(ScratchpadPath);
 
-        await ConnectAsync();
+        try
+        {
+            await ConnectAsync();
+        }
+        catch
+        {
+            // Connection failed (e.g. bad host/IP, or the CLI could not start).
+            // ConnectAsync assigns _client before StartAsync, so a failure leaves
+            // a non-null but never-started client, which IsConnected reports as
+            // false. Tear it down fully so a retry reconnects instead of
+            // early-returning on the stale client above (which would otherwise
+            // wedge the app until restart).
+            try { await DisposeAsync(); }
+            catch { /* best-effort cleanup */ }
+            ConnectionStateChanged?.Invoke(this, "Not connected");
+            throw;
+        }
+
         StartKeepAlive();
     }
 
@@ -1093,6 +1278,8 @@ public sealed class CopilotService : IAsyncDisposable
             SystemMessage = BuildSystemMessage(),
             ToolSearch = BuildToolSearchConfig(),
             McpServers = BuildMcpServers(),
+            Provider   = BuildProviderConfig(),
+            Models     = BuildProviderModels(),
         });
 
         _mainSession = session;
@@ -1278,6 +1465,8 @@ public sealed class CopilotService : IAsyncDisposable
                     SystemMessage = BuildSystemMessage(),
                     ToolSearch = BuildToolSearchConfig(),
                     McpServers = BuildMcpServers(),
+                    Provider   = BuildProviderConfig(),
+                    Models     = BuildProviderModels(),
                 });
 
                 _mainSession = session;
@@ -1319,6 +1508,8 @@ public sealed class CopilotService : IAsyncDisposable
             SkillDirectories = skillDirs.Count > 0 ? skillDirs : null,
             ToolSearch       = BuildToolSearchConfig(),
             McpServers       = BuildMcpServers(),
+            Provider         = BuildProviderConfig(),
+            Models           = BuildProviderModels(),
         });
 
         _mainSession = session;

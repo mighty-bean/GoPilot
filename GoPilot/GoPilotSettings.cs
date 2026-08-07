@@ -87,6 +87,37 @@ internal sealed class GoPilotSettings
 	public double LocalFilterThreshold { get; set; } = 0.85;
 
 	/// <summary>
+	/// Which AI service backs the session. <c>Copilot</c> (default) drives the
+	/// cloud model through the Copilot CLI; <c>LocalOpenAI</c> points the CLI's
+	/// per-session provider at a local/LAN OpenAI-compatible endpoint (e.g.
+	/// Lemonade or llama.cpp). Persisted under <c>[AiService]</c> as
+	/// <c>Provider=Copilot|LocalOpenAI</c>.
+	/// </summary>
+	public string AiServiceProvider { get; set; } = "Copilot";
+
+	/// <summary>
+	/// Base URL of the local OpenAI-compatible server, including the API path
+	/// (e.g. <c>http://10.0.0.234:13305/api/v1</c>). Only used when
+	/// <see cref="AiServiceProvider"/> is <c>LocalOpenAI</c>. Persisted under
+	/// <c>[AiService]</c> as <c>Endpoint=</c>.
+	/// </summary>
+	public string LocalProviderEndpoint { get; set; } = string.Empty;
+
+	/// <summary>
+	/// API key sent to the local provider. Most local servers accept any
+	/// non-empty string; defaults to <c>lemonade</c>. Persisted under
+	/// <c>[AiService]</c> as <c>ApiKey=</c>.
+	/// </summary>
+	public string LocalProviderApiKey { get; set; } = "lemonade";
+
+	/// <summary>
+	/// Last selected local provider model id (e.g.
+	/// <c>Qwen3-Coder-30B-A3B-Instruct-GGUF</c>). Empty until the user picks
+	/// one. Persisted under <c>[AiService]</c> as <c>Model=</c>.
+	/// </summary>
+	public string LocalProviderModel { get; set; } = string.Empty;
+
+	/// <summary>
 	/// When true, GoPilot enables the runtime's tool-search behaviour so MCP and
 	/// external tools beyond <see cref="ToolSearchDeferThreshold"/> are deferred
 	/// behind the built-in <c>tool_search_tool</c> instead of being pre-loaded
@@ -246,6 +277,16 @@ internal sealed class GoPilotSettings
 							break;
 					}
 				}
+				else if (section == "aiservice")
+				{
+					switch (key)
+					{
+						case "provider": settings.AiServiceProvider     = val; break;
+						case "endpoint": settings.LocalProviderEndpoint  = val; break;
+						case "apikey":   settings.LocalProviderApiKey    = val; break;
+						case "model":    settings.LocalProviderModel     = val; break;
+					}
+				}
 				else if (section == "mcpservers" && key == "server")
 				{
 					var entry = McpServerEntry.TryDecode(val);
@@ -327,6 +368,12 @@ internal sealed class GoPilotSettings
 		sb.Append("\r\n[ToolSearch]\r\n");
 		sb.Append($"Enabled={(ToolSearchEnabled ? "true" : "false")}\r\n");
 		sb.Append($"DeferThreshold={ToolSearchDeferThreshold.ToString(System.Globalization.CultureInfo.InvariantCulture)}\r\n");
+
+		sb.Append("\r\n[AiService]\r\n");
+		sb.Append($"Provider={AiServiceProvider}\r\n");
+		sb.Append($"Endpoint={LocalProviderEndpoint}\r\n");
+		sb.Append($"ApiKey={LocalProviderApiKey}\r\n");
+		sb.Append($"Model={LocalProviderModel}\r\n");
 
 		sb.Append("\r\n[McpServers]\r\n");
 		var disabledSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

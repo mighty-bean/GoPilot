@@ -6,6 +6,7 @@ internal static class AppTheme
     // ── Background layers (darkest → lightest) ─────────────────────────────
     public static readonly Color OutputBox  = Color.FromArgb(0,   0,   0);
     public static readonly Color InputBox   = Color.FromArgb(52,  52,  52);
+    public static readonly Color InputBoxOff = Color.FromArgb(40, 40,  40);
     public static readonly Color Background = Color.FromArgb(64,  64,  64);
     public static readonly Color Surface    = Color.FromArgb(74,  74,  74);
     public static readonly Color StatusBar  = Color.FromArgb(56,  56,  56);

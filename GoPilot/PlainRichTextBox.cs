@@ -64,6 +64,24 @@ internal sealed class PlainRichTextBox : RichTextBox
         AllowDrop = true;
     }
 
+    /// <summary>
+    /// Enables or disables prompt input while preserving the dark theme.
+    /// A native RichEdit ignores its BackColor when <see cref="Control.Enabled"/>
+    /// is false and paints the system control colour (a bright grey), which
+    /// clashes with the dark UI. Instead of disabling the control we make it
+    /// read-only, which keeps the custom BackColor, and mirror the other
+    /// interactive traits (drop target, tab stop) so it behaves like a disabled
+    /// field. A slightly darker background and muted text signal the state.
+    /// </summary>
+    public void SetInputEnabled(bool enabled)
+    {
+        ReadOnly  = !enabled;
+        TabStop   = enabled;
+        AllowDrop = enabled;
+        BackColor = enabled ? AppTheme.InputBox   : AppTheme.InputBoxOff;
+        ForeColor = enabled ? AppTheme.TextPrimary : AppTheme.TextMuted;
+    }
+
     protected override void OnDragEnter(DragEventArgs e)
     {
         e.Effect = ContainsAcceptedFormat(e.Data)

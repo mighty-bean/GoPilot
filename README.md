@@ -6,6 +6,7 @@ A Windows desktop GUI for the [GitHub Copilot SDK](libs/copilot-sdk). GoPilot wr
 
 ## Features
 
+- **NEW** AI Service chooser at every New Session: run the cloud GitHub Copilot model, or point the session at a local OpenAI-compatible server (Lemonade, llama.cpp) on this machine or your network. The Send button reads **Connect** until you pick your model and options.
 - Multi-line prompt editor. Enter inserts a newline, Ctrl+Enter (or the Send button) submits.
 - Drag and drop files or folders from File Explorer or the VS Solution Explorer onto the prompt.
 - Paste clipboard images directly; sent as PNGs, previewed inline.
@@ -54,7 +55,9 @@ I find it difficult to work in a terminal, so I built a Windows app that makes i
    GoPilot.exe C:\path\to\my\project
    ```
 3. Pick a workspace with **Session ▸ 📂 New Session...**. The Send button stays disabled until a workspace is open.
-4. Type a prompt and press **Send** (or Ctrl+Enter).
+4. Choose your AI service in the dialog that appears - **GitHub Copilot (cloud)** or a **local OpenAI-compatible server** - and optionally the local Filter LLM. See [AI Service](#ai-service).
+5. GoPilot connects and lists the available models. Pick your model and options, then press **Connect** to start the session.
+6. Type a prompt and press **Send** (or Ctrl+Enter).
 
 ## User Interface
 
@@ -82,12 +85,12 @@ PowerShell, File Explorer, and VS Code at the workspace root. Skill Tree, Skill 
 
 | Control | Description |
 |---|---|
-| Model | Pick the AI model. |
+| Model | Pick the AI model. Populated from the chosen AI service once connected. |
 | Mode | Standard, Plan, or Autopilot. |
-| Effort | Reasoning effort for the selected model when supported. Defaults to the highest available. |
+| Effort | Reasoning effort for the selected model when supported. Defaults to the highest available. Hidden for local providers, which do not advertise effort. |
 | ⚙ Options ▾ | Session toggles. Active toggles show as coloured badges on the button. |
 | ⬛ Stop | Cancel the current response. No-op when nothing is in flight. |
-| ▶ Send | Submit the prompt. Shortcut: Ctrl+Enter. |
+| ▶ Send / Connect | After a New Session the button reads **Connect** and starts the session when clicked. It then becomes **Send** to submit prompts. Shortcut: Ctrl+Enter. See [AI Service](#ai-service). |
 
 Model, Mode, Effort, Fleet, and Auto-approve are persisted to `gopilot.ini` under `[Session]` and restored on the next launch.
 
@@ -132,6 +135,44 @@ Color coding (both tabs where applicable): blue for your prompt, green for Copil
 ### Status bar
 
 Connection status, Copilot version, agent activity, context meter (green below 60%, amber 60-85%, red above), and session info.
+
+## AI Service
+
+Every **Session ▸ 📂 New Session...** opens the **Choose AI Service** dialog before the session is created. It picks the backend for that session and, independently, the local Filter LLM. Your previous choices are shown as the initial selections.
+
+| Choice | What it means |
+|---|---|
+| **GitHub Copilot (cloud)** | The default. The session runs against the GitHub Copilot cloud model. |
+| **Local OpenAI-compatible server** | The session runs against a local/LAN server that speaks the OpenAI API (e.g. [Lemonade](https://github.com/lemonade-sdk/lemonade) or llama.cpp). |
+
+For a local server you supply:
+
+| Field | Notes |
+|---|---|
+| Host or IP | `localhost`, a LAN host name, or an IP. A pasted `http://host:port` URL or an IPv6 literal in brackets is also accepted. |
+| Port | The server's port. |
+| API path | The OpenAI base path. Lemonade uses `/api/v1`; llama.cpp uses `/v1`. Defaults to `/api/v1`. |
+| API key | Forwarded as a Bearer token. Most local servers accept any non-empty string; defaults to `lemonade`. |
+
+The dialog also has a **Filter LLM** section - the same local prompt-reduction/summarizing pre-pass described under [Local LLM Filter](#local-llm-filter). Tick the box to enable it and use **Configure...** to pick the Ollama host, model, and confidence threshold. (The **Options ▸ 🧠 Local LLM filter** toggle remains available too.)
+
+### The Connect step
+
+Because the model list depends on the chosen service, GoPilot connects first and lets you pick your model before the session starts:
+
+1. Pick your service (and Filter LLM) and press **OK**.
+2. GoPilot starts the CLI client and enumerates the available models from that service, populating the **Model** dropdown. For a local server the list comes from the server's `/models` endpoint; reasoning **Effort** is hidden because local providers do not advertise it.
+3. The status panel shows which service is active and the Send button reads **Connect**. Pick your model and options.
+4. Press **Connect** (or Ctrl+Enter). GoPilot creates the session with those choices; the button then becomes **Send** and works as normal.
+
+If connecting or starting the session fails, GoPilot reports the error and returns to the **Connect** state so you can adjust the host/port/API path (or check that `copilot` is installed and authenticated) and retry.
+
+Notes:
+
+- The Copilot CLI still drives the session for both services - all skill/agent/MCP/tool machinery is unchanged. A local provider only changes where inference runs.
+- The provider is baked in at session creation, so a running session cannot be switched between cloud and local; start a new session to change it.
+- The chosen service is recorded per-session, so **Past Sessions ▸ Resume** restores the correct backend. Sessions created before this feature default to Copilot.
+- Choices persist in `gopilot.ini` under `[AiService]` (`Provider`, `Endpoint`, `ApiKey`, `Model`); the local model is remembered separately from the cloud model.
 
 ## Refreshing the Session
 

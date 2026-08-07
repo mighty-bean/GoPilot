@@ -254,6 +254,7 @@ partial class MainForm
         panelActions.Controls.Add(buttonStop);
         panelActions.Controls.Add(buttonSend);
         panelActions.Dock = DockStyle.Top;
+        panelActions.Enabled = false;
         panelActions.Location = new Point(0, 0);
         panelActions.Name = "panelActions";
         panelActions.Padding = new Padding(4, 4, 8, 4);
@@ -263,13 +264,14 @@ partial class MainForm
         // buttonOptions
         // 
         buttonOptions.BackColor = Color.FromArgb(86, 86, 86);
+        buttonOptions.Enabled = true;
         buttonOptions.FlatAppearance.BorderColor = Color.FromArgb(108, 108, 108);
         buttonOptions.FlatStyle = FlatStyle.Flat;
         buttonOptions.Font = new Font("Segoe UI", 9F);
         buttonOptions.ForeColor = Color.FromArgb(218, 218, 218);
         buttonOptions.Location = new Point(554, 4);
         buttonOptions.Name = "buttonOptions";
-        buttonOptions.Size = new Size(210, 28);
+        buttonOptions.Size = new Size(201, 28);
         buttonOptions.TabIndex = 0;
         buttonOptions.Text = "Options: ▾";
         toolTipMain.SetToolTip(buttonOptions, "Toggle session options (Auto-approve tools, Fleet mode, Caveman Mode, Show Working Steps)");
@@ -290,6 +292,7 @@ partial class MainForm
         // 
         comboBoxModel.BackColor = Color.FromArgb(52, 52, 52);
         comboBoxModel.DropDownStyle = ComboBoxStyle.DropDownList;
+        comboBoxModel.Enabled = true;
         comboBoxModel.FlatStyle = FlatStyle.Flat;
         comboBoxModel.Font = new Font("Segoe UI", 9F);
         comboBoxModel.ForeColor = Color.FromArgb(218, 218, 218);
@@ -314,6 +317,7 @@ partial class MainForm
         // 
         comboBoxMode.BackColor = Color.FromArgb(52, 52, 52);
         comboBoxMode.DropDownStyle = ComboBoxStyle.DropDownList;
+        comboBoxMode.Enabled = true;
         comboBoxMode.FlatStyle = FlatStyle.Flat;
         comboBoxMode.Font = new Font("Segoe UI", 9F);
         comboBoxMode.ForeColor = Color.FromArgb(218, 218, 218);
@@ -359,9 +363,9 @@ partial class MainForm
         buttonStop.FlatStyle = FlatStyle.Flat;
         buttonStop.Font = new Font("Segoe UI", 9F);
         buttonStop.ForeColor = Color.FromArgb(218, 218, 218);
-        buttonStop.Location = new Point(793, 4);
+        buttonStop.Location = new Point(773, 4);
         buttonStop.Name = "buttonStop";
-        buttonStop.Size = new Size(73, 28);
+        buttonStop.Size = new Size(61, 28);
         buttonStop.TabIndex = 4;
         buttonStop.Text = "⬛ Stop";
         toolTipMain.SetToolTip(buttonStop, "Stop the current Copilot response");
@@ -376,11 +380,11 @@ partial class MainForm
         buttonSend.FlatStyle = FlatStyle.Flat;
         buttonSend.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
         buttonSend.ForeColor = Color.FromArgb(235, 235, 235);
-        buttonSend.Location = new Point(871, 4);
+        buttonSend.Location = new Point(840, 4);
         buttonSend.Name = "buttonSend";
-        buttonSend.Size = new Size(60, 28);
+        buttonSend.Size = new Size(91, 28);
         buttonSend.TabIndex = 5;
-        buttonSend.Text = "▶ Send";
+        buttonSend.Text = "Connect";
         toolTipMain.SetToolTip(buttonSend, "Send prompt to Copilot (Ctrl+Enter)");
         buttonSend.UseVisualStyleBackColor = false;
         // 
@@ -460,7 +464,7 @@ partial class MainForm
         contextMenuOptions.ImageScalingSize = new Size(32, 32);
         contextMenuOptions.Items.AddRange(new ToolStripItem[] { menuOptionAutoApprove, menuOptionFleet, menuOptionToolSearch, menuSessionCaveman, menuOptionLocalFilter, menuSessionShowSteps });
         contextMenuOptions.Name = "contextMenuOptions";
-        contextMenuOptions.Size = new Size(183, 114);
+        contextMenuOptions.Size = new Size(183, 136);
         // 
         // menuOptionAutoApprove
         // 
@@ -782,7 +786,7 @@ partial class MainForm
         menuToolsMcpServers.ForeColor = Color.FromArgb(218, 218, 218);
         menuToolsMcpServers.Name = "menuToolsMcpServers";
         menuToolsMcpServers.Size = new Size(222, 22);
-        menuToolsMcpServers.Text = "\U0001f50c MCP &Servers...";
+        menuToolsMcpServers.Text = "🔌 MCP &Servers...";
         menuToolsMcpServers.ToolTipText = "Add, edit, or remove local (stdio) and HTTP MCP servers attached to every session. Changes take effect on the next session.";
         // 
         // menuHelp
