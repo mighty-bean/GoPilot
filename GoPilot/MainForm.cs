@@ -283,6 +283,7 @@ public partial class MainForm : Form
             "Please provide a concise summary of what we've discussed and accomplished so far in this session.");
         menuSessionClear.Click += (_, _) => ClearActiveOutput();
         menuSessionRefreshCompact.Click += async (_, _) => await RunCompactAsync();
+        menuSessionRefreshClear.Click += async (_, _) => await RunClearContextAsync();
         menuSessionRefreshRestart.Click += async (_, _) => await RunRestartWithSummaryAsync();
         menuSessionRefreshFresh.Click += async (_, _) => await RunFreshStartAsync();
         menuSessionPast.Click += async (_, _) => await BrowsePastSessionsAsync();
@@ -438,6 +439,9 @@ public partial class MainForm : Form
         // AIC usage updates from the Copilot SDK/CLI (authoritative when present)
         _copilot.AicUsageChanged += (_, args) =>
             InvokeOnUI(() => OnAicUsageChanged(args));
+
+        _copilot.ContextCleared += (_, args) =>
+            InvokeOnUI(() => OnContextCleared(args));
     }
 
     private void InvokeOnUI(Action action)
@@ -2044,6 +2048,144 @@ public partial class MainForm : Form
         }
     }
 
+    // Set by CopilotService.ContextCleared. The clear is performed by the model
+    // calling GoPilot's clear_context tool, so the only reliable way to know it
+    // actually happened is the runtime's own context_cleared event.
+    private bool _contextClearedSeen;
+    private string _lastClearedSummary = "";
+
+    private void OnContextCleared(ContextClearedEventArgs args)
+    {
+        _contextClearedSeen = true;
+        _lastClearedSummary = args.Summary;
+        _autoRefreshPromptShown = false;
+        AppendOutput(
+            $"[Context cleared] {args.MessagesCleared} conversation messages dropped, session ID unchanged.\r\n",
+            AppTheme.ColorMeta);
+    }
+
+    /// <summary>
+    /// Asks the model to write a resume note and hand it to GoPilot's
+    /// <c>clear_context</c> tool, which drops the conversation but keeps the
+    /// session, its ID, its system message and its tools. The result is the
+    /// summary-and-restart handoff without the restart.
+    /// </summary>
+    /// <remarks>
+    /// The runtime only permits a clear from inside a tool handler, so this
+    /// depends on the model choosing to call the tool. A model that answers in
+    /// prose instead leaves the conversation untouched, which is why the caller
+    /// must treat false as "fall back to a real restart".
+    /// </remarks>
+    /// <param name="reason">Short human-readable trigger, shown in the output panel.</param>
+    /// <returns>True only if the runtime reported the context as cleared.</returns>
+    private async Task<bool> PerformClearContextAsync(string reason)
+    {
+        _contextClearedSeen = false;
+        _lastClearedSummary = "";
+
+        AppendOutput($"\r\n💤 Clearing context in place - {reason}...\r\n\r\n", AppTheme.ColorMeta);
+
+        try
+        {
+            await _copilot.SendAndCaptureResponseAsync(
+                CopilotService.ClearContextRequestPrompt, TimeSpan.FromMinutes(5));
+        }
+        catch (Exception ex)
+        {
+            AppendOutput($"[Clear context failed: {ex.Message}]\r\n", AppTheme.ColorError);
+            return false;
+        }
+
+        if (!_contextClearedSeen)
+        {
+            AppendOutput("[The model did not clear the context]\r\n", AppTheme.ColorMeta);
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_lastClearedSummary))
+        {
+            var dreamPath = await SaveDreamAsync(_lastClearedSummary, reason, "clear-context");
+            if (dreamPath != null)
+                AppendOutput($"[Dream saved: {dreamPath}]\r\n", AppTheme.ColorMeta);
+        }
+
+        AppendOutput("─────────── context cleared ───────────\r\n\r\n", AppTheme.ColorMeta);
+        return true;
+    }
+
+    /// <summary>
+    /// Menu entry point for the in-place clear. Falls back to the full
+    /// summary-and-restart handoff when the model declines to call the tool.
+    /// </summary>
+    private async Task RunClearContextAsync()
+    {
+        if (_refreshInProgress) return;
+        if (!_copilot.IsConnected || _mainSessionId == null)
+        {
+            MessageBox.Show(this, "No active session to refresh. Open a folder and send at least one message first.",
+                "Nothing to Refresh", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        _refreshInProgress = true;
+        var oldText = menuSessionRefresh.Text;
+        menuSessionRefresh.Enabled = false;
+        menuSessionRefresh.Text = "⏳ Clearing...";
+        SetSendingState(true);
+
+        bool cleared;
+        try
+        {
+            cleared = await PerformClearContextAsync("user requested");
+        }
+        finally
+        {
+            menuSessionRefresh.Text = oldText;
+            menuSessionRefresh.Enabled = true;
+            SetSendingState(false);
+            _refreshInProgress = false;
+        }
+
+        if (!cleared)
+        {
+            AppendOutput("[Falling back to Restart with summary]\r\n\r\n", AppTheme.ColorMeta);
+            await RunRestartWithSummaryAsync();
+        }
+    }
+
+    /// <summary>
+    /// Writes a resume note to the per-workspace <c>dreams\</c> folder under
+    /// <c>%LOCALAPPDATA%\GoPilot\workspaces\&lt;key&gt;\</c>, tagged with the model,
+    /// mode, trigger and which refresh path produced it.
+    /// </summary>
+    /// <returns>The file path, or null when there is no workspace or the write fails.</returns>
+    private async Task<string?> SaveDreamAsync(string summary, string reason, string source)
+    {
+        if (_copilot.WorkspaceDataPath == null) return null;
+
+        try
+        {
+            var dreamsDir = Path.Combine(_copilot.WorkspaceDataPath, "dreams");
+            Directory.CreateDirectory(dreamsDir);
+            var dreamPath = Path.Combine(dreamsDir, $"dream-{DateTime.Now:yyyy-MM-dd-HHmmss}.md");
+
+            var model = comboBoxModel.SelectedItem?.ToString() ?? string.Empty;
+            var mode = comboBoxMode.SelectedItem?.ToString() ?? string.Empty;
+            var metadata =
+                $"\r\n<!-- gopilot-model: {model} -->\r\n" +
+                $"<!-- gopilot-mode: {mode} -->\r\n" +
+                $"<!-- gopilot-source: {source} -->\r\n" +
+                $"<!-- gopilot-reason: {reason} -->\r\n";
+
+            await File.WriteAllTextAsync(dreamPath, summary + metadata);
+            return dreamPath;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private async Task RunCompactAsync()
     {
         if (_refreshInProgress) return;
@@ -2072,14 +2214,25 @@ public partial class MainForm : Form
             }
             else
             {
+                // Escalate rather than jumping straight to a new session: clearing
+                // in place keeps the session ID and costs one turn, and it works
+                // where the runtime's own compaction did not.
                 AppendOutput(
-                    "[Compact failed — falling back to Restart with summary]\r\n\r\n",
+                    "[Compact failed - falling back to Clear context]\r\n\r\n",
                     AppTheme.ColorMeta);
-                _refreshInProgress = false; // RunRestart will reacquire the gate
-                menuSessionRefresh.Text = oldText;
-                menuSessionRefresh.Enabled = true;
-                SetSendingState(false);
-                await RunRestartWithSummaryAsync();
+
+                var cleared = await PerformClearContextAsync("compact failed");
+                if (!cleared)
+                {
+                    AppendOutput(
+                        "[Clear context failed - falling back to Restart with summary]\r\n\r\n",
+                        AppTheme.ColorMeta);
+                    _refreshInProgress = false; // RunRestart will reacquire the gate
+                    menuSessionRefresh.Text = oldText;
+                    menuSessionRefresh.Enabled = true;
+                    SetSendingState(false);
+                    await RunRestartWithSummaryAsync();
+                }
                 return;
             }
         }
@@ -2171,23 +2324,9 @@ public partial class MainForm : Form
 
             var summary = await _copilot.SendAndCaptureResponseAsync(HandoffSummaryPrompt, TimeSpan.FromMinutes(5));
 
-            // Guard at start of method ensures WorkingDirectory != null,
-            // therefore WorkspaceDataPath is also non-null here.
-            var dreamsDir = Path.Combine(_copilot.WorkspaceDataPath!, "dreams");
-            Directory.CreateDirectory(dreamsDir);
-            var dreamPath = Path.Combine(dreamsDir, $"dream-{DateTime.Now:yyyy-MM-dd-HHmmss}.md");
-
-            var model = comboBoxModel.SelectedItem?.ToString() ?? string.Empty;
-            var mode = comboBoxMode.SelectedItem?.ToString() ?? string.Empty;
-            var metadata =
-                $"\r\n<!-- gopilot-model: {model} -->\r\n" +
-                $"<!-- gopilot-mode: {mode} -->\r\n" +
-                $"<!-- gopilot-source: dream -->\r\n" +
-                $"<!-- gopilot-reason: {reason} -->\r\n";
-
-            await File.WriteAllTextAsync(dreamPath, summary + metadata);
-
-            AppendOutput($"[Dream saved: {dreamPath}]\r\n", AppTheme.ColorMeta);
+            var dreamPath = await SaveDreamAsync(summary, reason, "dream");
+            if (dreamPath != null)
+                AppendOutput($"[Dream saved: {dreamPath}]\r\n", AppTheme.ColorMeta);
             AppendOutput("💤 Opening fresh session in this workspace…\r\n\r\n", AppTheme.ColorMeta);
 
             // Tear down + recreate so the new session honours the latest mode/fleet.

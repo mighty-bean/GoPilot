@@ -66,6 +66,7 @@ partial class MainForm
         menuSessionClear = new ToolStripMenuItem();
         menuSessionRefresh = new ToolStripMenuItem();
         menuSessionRefreshCompact = new ToolStripMenuItem();
+        menuSessionRefreshClear = new ToolStripMenuItem();
         menuSessionRefreshRestart = new ToolStripMenuItem();
         menuSessionRefreshFresh = new ToolStripMenuItem();
         menuReferences = new ToolStripMenuItem();
@@ -592,7 +593,7 @@ partial class MainForm
         // menuSessionRefresh
         // 
         menuSessionRefresh.BackColor = Color.FromArgb(56, 56, 56);
-        menuSessionRefresh.DropDownItems.AddRange(new ToolStripItem[] { menuSessionRefreshCompact, menuSessionRefreshRestart, menuSessionRefreshFresh });
+        menuSessionRefresh.DropDownItems.AddRange(new ToolStripItem[] { menuSessionRefreshCompact, menuSessionRefreshClear, menuSessionRefreshRestart, menuSessionRefreshFresh });
         menuSessionRefresh.ForeColor = Color.FromArgb(218, 218, 218);
         menuSessionRefresh.Name = "menuSessionRefresh";
         menuSessionRefresh.Size = new Size(167, 22);
@@ -607,6 +608,15 @@ partial class MainForm
         menuSessionRefreshCompact.Size = new Size(288, 22);
         menuSessionRefreshCompact.Text = "⚡ &Compact (fast, keeps session)";
         menuSessionRefreshCompact.ToolTipText = "Ask the CLI to summarise history in place. Session ID is preserved.";
+        // 
+        // menuSessionRefreshClear
+        // 
+        menuSessionRefreshClear.BackColor = Color.FromArgb(56, 56, 56);
+        menuSessionRefreshClear.ForeColor = Color.FromArgb(218, 218, 218);
+        menuSessionRefreshClear.Name = "menuSessionRefreshClear";
+        menuSessionRefreshClear.Size = new Size(288, 22);
+        menuSessionRefreshClear.Text = "🧹 C&lear context (keeps session)";
+        menuSessionRefreshClear.ToolTipText = "Ask the model for a resume note, then drop the conversation and continue in the same session with a fresh window seeded from that note.";
         // 
         // menuSessionRefreshRestart
         // 
@@ -949,6 +959,7 @@ partial class MainForm
     private System.Windows.Forms.ToolStripMenuItem menuSessionClear;
     private System.Windows.Forms.ToolStripMenuItem menuSessionRefresh;
     private System.Windows.Forms.ToolStripMenuItem menuSessionRefreshCompact;
+    private System.Windows.Forms.ToolStripMenuItem menuSessionRefreshClear;
     private System.Windows.Forms.ToolStripMenuItem menuSessionRefreshRestart;
     private System.Windows.Forms.ToolStripMenuItem menuSessionRefreshFresh;
     private System.Windows.Forms.ToolStripMenuItem menuSessionCaveman;

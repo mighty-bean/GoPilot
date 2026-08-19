@@ -6,7 +6,7 @@ A Windows desktop GUI for the [GitHub Copilot SDK](libs/copilot-sdk). GoPilot wr
 
 ## Features
 
-- **NEW** AI Service chooser at every New Session: run the cloud GitHub Copilot model, or point the session at a local OpenAI-compatible server (Lemonade, llama.cpp) on this machine or your network. The Send button reads **Connect** until you pick your model and options.
+- AI Service chooser at every New Session: run the cloud GitHub Copilot model, or point the session at a local OpenAI-compatible server (Lemonade, llama.cpp) on this machine or your network. The Send button reads **Connect** until you pick your model and options.
 - Multi-line prompt editor. Enter inserts a newline, Ctrl+Enter (or the Send button) submits.
 - Drag and drop files or folders from File Explorer or the VS Solution Explorer onto the prompt.
 - Paste clipboard images directly; sent as PNGs, previewed inline.
@@ -23,7 +23,7 @@ A Windows desktop GUI for the [GitHub Copilot SDK](libs/copilot-sdk). GoPilot wr
 - MCP Servers manager: attach local (stdio) or HTTP MCP servers to every session, with per-server enable toggles, and auto-discover `.mcp.json` files from the workspace, user, and app folders (e.g. the one the Unreal Engine 5.8 editor generates). The dialog opens automatically at session start when servers are found so you can curate them first.
 - Tool permission dialog with Allow / Approve Similar / Deny, plus an Auto-approve toggle.
 - Caveman Mode: optional client-side prompt compression to cut tokens.
-- **NEW** Local LLM filter: optional codellama pre-pass (on this machine or any Ollama host on your network) that minimizes prompts and answers simple requests locally to save cloud tokens.
+- Local LLM filter: optional codellama pre-pass (on this machine or any Ollama host on your network) that minimizes prompts and answers simple requests locally to save cloud tokens.
 - All option toggles show as badges on the Options button in a fixed order; enabled options appear in full colour and disabled options are greyed out.
 - Sending while a turn is in flight interrupts it instead of queueing.
 - Dark theme throughout.
@@ -191,10 +191,21 @@ Notes:
 | Option | What it does |
 |---|---|
 | ⚡ Compact (fast) | In-place compaction via `session.history.compact`. Session ID preserved. |
+| 🧹 Clear context | Asks the model for a resume note, drops the conversation, and continues in the same session with a fresh window seeded from that note. Session ID preserved. |
 | 🔄 Restart with summary | Saves a one-page summary to `%LOCALAPPDATA%\GoPilot\workspaces\<key>\dreams\`, opens a fresh session, seeds it with the summary. |
 | 🆕 Fresh start | Discards all context and opens a brand-new session in the same folder. |
 
 At 85% context usage GoPilot offers to compact or restart automatically.
+
+Compact escalates on its own: if `session.history.compact` fails, GoPilot tries Clear context, and only falls back to Restart with summary if that fails too. Each step down the chain keeps less of the session, so the cheapest one that works is the one that runs.
+
+### Clear context
+
+Compaction hands the conversation back to the model and asks it to shrink it, which is only as good as the model doing the shrinking - a weak spot for a small local model. Clearing takes the opposite approach: GoPilot asks for a one-page resume note, then has the runtime **discard the conversation outright** and start a fresh window seeded with that note. The system message, the tool definitions, the session ID and the session's place in Past Sessions all survive; only the conversation goes.
+
+The note is saved to the workspace's `dreams\` folder like a Restart summary, tagged `gopilot-source: clear-context`.
+
+The runtime only permits a clear from inside a tool handler, because it has to discard the tool results its own wipe would orphan. GoPilot therefore exposes a `clear_context` tool (about 50 tokens of tool definition) and asks the model to call it with the resume note. That means the model has to co-operate: if it answers in prose instead of calling the tool, nothing is cleared and GoPilot falls back to Restart with summary. The tool is marked terminal, so a successful clear ends the turn rather than feeding a reply back into a conversation that no longer exists; the runtime then delivers the seeded note as the first message of the new window.
 
 Changing Mode or toggling Fleet during an active session forces a new session (the system message is baked in at creation). Rather than discarding context, GoPilot defers the reset: on the next send it runs the same summary-and-restart flow, then forwards the prompt to the fresh session.
 

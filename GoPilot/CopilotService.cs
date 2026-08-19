@@ -85,6 +85,17 @@ public sealed class ContextUsageEventArgs : EventArgs
     public double Percent => MaxPromptTokens > 0 ? (InputTokens / MaxPromptTokens) * 100.0 : 0;
 }
 
+/// <summary>
+/// Details of an in-place conversation clear (<c>session.context_cleared</c>).
+/// </summary>
+public sealed class ContextClearedEventArgs : EventArgs
+{
+    public string SessionId { get; init; } = "";
+    /// <summary>Number of conversation messages the runtime dropped.</summary>
+    public long MessagesCleared { get; init; }    /// <summary>The resume note the fresh window was seeded with, if GoPilot supplied one.</summary>
+    public string Summary { get; init; } = "";
+}
+
 public sealed class AicUsageEventArgs : EventArgs
 {
     public string SessionId { get; init; } = "";
@@ -127,6 +138,13 @@ public sealed class CopilotService : IAsyncDisposable
     public event EventHandler<string>? SubAgentSessionEnded;
     public event EventHandler<ContextUsageEventArgs>? ContextUsageChanged;
     public event EventHandler<AicUsageEventArgs>? AicUsageChanged;
+    /// <summary>
+    /// Fires when the runtime clears the main session's conversation in place, in
+    /// response to the model calling GoPilot's <c>clear_context</c> tool. The
+    /// session, its ID, its system message and its tools all survive; only the
+    /// conversation is dropped and replaced by the seeded resume note.
+    /// </summary>
+    public event EventHandler<ContextClearedEventArgs>? ContextCleared;
 
     // Most recent input-token reading from the main session (size of the prompt
     // window the model just consumed) and the active model's prompt-token ceiling.
@@ -381,6 +399,115 @@ public sealed class CopilotService : IAsyncDisposable
 
         return names.Count > 0 ? names : null;
     }
+
+    /// <summary>The name of GoPilot's in-session context-clearing tool.</summary>
+    public const string ClearContextToolName = "clear_context";
+
+    /// <summary>
+    /// Prepended to the resume note the model writes, so the fresh context window
+    /// opens with an instruction rather than a bare document.
+    /// </summary>
+    private const string ClearContextSeedPrompt =
+        "This is the resume note from the conversation we just cleared, in this same workspace and session. "
+      + "Read it and confirm briefly that you have the context, then wait for my next instruction.";
+
+    // Set by the clear_context tool handler so SessionContextClearedEvent can report
+    // the note GoPilot seeded, which the event itself only carries in truncated form.
+    private string _lastClearSummary = "";
+
+    /// <summary>
+    /// Declares GoPilot's <c>clear_context</c> tool. Clearing the conversation is
+    /// only legal from inside a tool handler with a call in flight - the runtime
+    /// has to discard the tool results its own wipe orphans - so an in-session
+    /// reset has to be driven by the model calling a tool, not by an RPC from the
+    /// UI thread.
+    /// </summary>
+    /// <remarks>
+    /// The tool is marked terminal: a successful clear ends the agent turn instead
+    /// of feeding the result back to a model whose conversation no longer exists.
+    /// The runtime then delivers the seeded note as the first message of the fresh
+    /// window, which the model answers as a normal turn. A failed clear is thrown
+    /// rather than returned, so the runtime keeps the loop alive and the model can
+    /// report the failure instead of silently believing it succeeded.
+    /// </remarks>
+    private Microsoft.Extensions.AI.AIFunctionDeclaration BuildClearContextTool()
+    {
+        return CopilotTool.DefineTool(
+            async (string summary) =>
+            {
+                var session = _mainSession
+                    ?? throw new InvalidOperationException("There is no active session to clear.");
+
+                var note = (summary ?? "").Trim();
+                if (note.Length == 0)
+                    throw new InvalidOperationException(
+                        "A resume note is required: the cleared window is seeded with it.");
+
+                var result = await session.Rpc.History.ClearContextAsync(
+                    ClearContextSeedPrompt + "\r\n\r\n" + note);
+
+                _lastClearSummary = note;
+                return $"Context cleared: {result.MessagesCleared} conversation messages were dropped and a "
+                     + "fresh window was seeded with the resume note.";
+            },
+            new CopilotToolOptions
+            {
+                IsTerminal = true,
+                // GoPilot drives this deliberately and it touches nothing outside
+                // the session's own conversation, so a permission prompt would only
+                // stand between the user and the refresh they just asked for.
+                SkipPermission = true,
+                // Tool search may defer tools it thinks are unused; this one has to
+                // be visible exactly when the window is under pressure.
+                Defer = CopilotToolDefer.Never,
+            },
+            new Microsoft.Extensions.AI.AIFunctionFactoryOptions
+            {
+                Name = ClearContextToolName,
+                Description =
+                    "Clear this conversation and continue in a fresh context window seeded with a resume note. "
+                  + "Call this only when the user asks to clear, compact or refresh the context. "
+                  + "Pass the complete resume note as 'summary': everything not in that note is lost.",
+            });
+    }
+
+    /// <summary>
+    /// The custom tools attached to every session GoPilot creates or resumes.
+    /// </summary>
+    private List<Microsoft.Extensions.AI.AIFunctionDeclaration> BuildTools() =>
+        new() { BuildClearContextTool() };
+
+    /// <summary>
+    /// The prompt that asks the model to write a resume note and hand it to
+    /// <c>clear_context</c>. Whether the model complies is up to the model, so
+    /// callers must treat a missing <see cref="ContextCleared"/> as failure and
+    /// fall back to a full session restart.
+    /// </summary>
+    public const string ClearContextRequestPrompt =
+        """
+        Our context window needs clearing. Do this in one step, using ONLY what is already in our conversation history - do NOT read files, run commands, or use any other tool.
+
+        Call the clear_context tool once, passing a Markdown resume note as 'summary' with these sections:
+
+        # Session Resume
+
+        ## Goal
+        One or two sentences: what we set out to accomplish.
+
+        ## What Was Done
+        Short bullet list of the key things completed or decided this session.
+
+        ## Current State
+        One paragraph describing exactly where things stand right now.
+
+        ## Next Step
+        The single most important thing to do when resuming.
+
+        ## Context to Remember
+        Any non-obvious decisions, constraints, or gotchas needed to continue.
+
+        Keep it under one page. Everything you leave out of the note is lost, so write the note before you call the tool.
+        """;
 
     // Shared HttpClient for local-provider model enumeration.
     private static readonly HttpClient _localHttp = new() { Timeout = TimeSpan.FromSeconds(15) };
@@ -1097,16 +1224,24 @@ public sealed class CopilotService : IAsyncDisposable
             await CreateMainSessionAsync();
 
         var sb = new System.Text.StringBuilder();
+        var final = new System.Text.StringBuilder();
         var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         EventHandler<SessionMessageEventArgs>? msgHandler  = null;
         EventHandler<string>?                  idleHandler = null;
 
+        // A streaming session emits the deltas AND a final message carrying the
+        // same text, so the two must not be concatenated or every captured
+        // response - the handoff summary among them - comes back doubled. The
+        // final message is only the fallback for a non-streaming session, which
+        // emits no deltas at all.
         msgHandler = (_, args) =>
         {
             if (args.SessionId != _mainSession?.SessionId) return;
-            if (args.Kind is MessageKind.AssistantDelta or MessageKind.AssistantFinal)
+            if (args.Kind is MessageKind.AssistantDelta)
                 sb.Append(args.Content);
+            else if (args.Kind is MessageKind.AssistantFinal)
+                final.Append(args.Content);
         };
 
         idleHandler = (_, sessionId) =>
@@ -1114,7 +1249,7 @@ public sealed class CopilotService : IAsyncDisposable
             if (sessionId != _mainSession?.SessionId) return;
             MessageReceived         -= msgHandler;
             SessionIdleForSession   -= idleHandler;
-            tcs.TrySetResult(sb.ToString());
+            tcs.TrySetResult(sb.Length > 0 ? sb.ToString() : final.ToString());
         };
 
         MessageReceived       += msgHandler;
@@ -1503,6 +1638,7 @@ public sealed class CopilotService : IAsyncDisposable
             ToolSearch = BuildToolSearchConfig(),
             McpServers = BuildMcpServers(),
             ExcludedTools = BuildExcludedTools(),
+            Tools      = BuildTools(),
             Provider   = BuildProviderConfig(),
         });
 
@@ -1690,6 +1826,7 @@ public sealed class CopilotService : IAsyncDisposable
                     ToolSearch = BuildToolSearchConfig(),
                     McpServers = BuildMcpServers(),
                     ExcludedTools = BuildExcludedTools(),
+                    Tools      = BuildTools(),
                     Provider   = BuildProviderConfig(),
                 });
 
@@ -1733,6 +1870,7 @@ public sealed class CopilotService : IAsyncDisposable
             ToolSearch       = BuildToolSearchConfig(),
             McpServers       = BuildMcpServers(),
             ExcludedTools    = BuildExcludedTools(),
+            Tools            = BuildTools(),
             Provider         = BuildProviderConfig(),
         });
 
@@ -2856,6 +2994,33 @@ public sealed class CopilotService : IAsyncDisposable
                     MaxPromptTokens = _currentMaxPromptTokens,
                 });
                 break;
+
+            case SessionContextClearedEvent contextCleared
+                when _mainSession == null || sessionId == _mainSession?.SessionId:
+            {
+                // The conversation is gone but the session, its ID, its system
+                // message and its tools all survive, so the window drops back to
+                // the fixed overhead plus the seeded note. Zero the meter now; the
+                // next usage_info replaces the estimate with the runtime's own
+                // tokenized figure.
+                var summary = _lastClearSummary;
+                _lastClearSummary = "";
+                _currentInputTokens = 0;
+                ContextUsageChanged?.Invoke(this, new ContextUsageEventArgs
+                {
+                    SessionId       = sessionId ?? "",
+                    InputTokens     = 0,
+                    MaxPromptTokens = _currentMaxPromptTokens,
+                });
+
+                ContextCleared?.Invoke(this, new ContextClearedEventArgs
+                {
+                    SessionId       = sessionId ?? "",
+                    MessagesCleared = contextCleared.Data?.MessagesCleared ?? 0,
+                    Summary         = summary,
+                });
+                break;
+            }
 
             case SessionWarningEvent warn
                 when _mainSession == null || sessionId == _mainSession?.SessionId:
