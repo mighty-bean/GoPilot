@@ -118,6 +118,14 @@ internal sealed class GoPilotSettings
 	public string LocalProviderModel { get; set; } = string.Empty;
 
 	/// <summary>
+	/// Prompt-window ceiling (in tokens) to assume for the local provider when
+	/// the server advertises none of its own. 0 (the default) means "not set".
+	/// A server-reported context size always takes precedence. Persisted under
+	/// <c>[AiService]</c> as <c>ContextSize=</c>.
+	/// </summary>
+	public int LocalProviderContextSize { get; set; } = 0;
+
+	/// <summary>
 	/// When true, GoPilot enables the runtime's tool-search behaviour so MCP and
 	/// external tools beyond <see cref="ToolSearchDeferThreshold"/> are deferred
 	/// behind the built-in <c>tool_search_tool</c> instead of being pre-loaded
@@ -285,6 +293,11 @@ internal sealed class GoPilotSettings
 						case "endpoint": settings.LocalProviderEndpoint  = val; break;
 						case "apikey":   settings.LocalProviderApiKey    = val; break;
 						case "model":    settings.LocalProviderModel     = val; break;
+						case "contextsize":
+							if (int.TryParse(val, System.Globalization.NumberStyles.Integer,
+									System.Globalization.CultureInfo.InvariantCulture, out var cs) && cs > 0)
+								settings.LocalProviderContextSize = cs;
+							break;
 					}
 				}
 				else if (section == "mcpservers" && key == "server")
@@ -374,6 +387,7 @@ internal sealed class GoPilotSettings
 		sb.Append($"Endpoint={LocalProviderEndpoint}\r\n");
 		sb.Append($"ApiKey={LocalProviderApiKey}\r\n");
 		sb.Append($"Model={LocalProviderModel}\r\n");
+		sb.Append($"ContextSize={LocalProviderContextSize.ToString(System.Globalization.CultureInfo.InvariantCulture)}\r\n");
 
 		sb.Append("\r\n[McpServers]\r\n");
 		var disabledSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

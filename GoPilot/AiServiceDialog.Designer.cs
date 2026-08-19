@@ -36,6 +36,9 @@ partial class AiServiceDialog
         _pathBox = new ComboBox();
         _keyLabel = new Label();
         _apiKeyBox = new ComboBox();
+        _ctxLabel = new Label();
+        _ctxBox = new TextBox();
+        _ctxHintLabel = new Label();
         _pathHintLabel = new Label();
         _previewLabel = new Label();
         _filterGroup = new GroupBox();
@@ -91,12 +94,15 @@ partial class AiServiceDialog
         _localGroup.Controls.Add(_pathBox);
         _localGroup.Controls.Add(_keyLabel);
         _localGroup.Controls.Add(_apiKeyBox);
+        _localGroup.Controls.Add(_ctxLabel);
+        _localGroup.Controls.Add(_ctxBox);
+        _localGroup.Controls.Add(_ctxHintLabel);
         _localGroup.Controls.Add(_pathHintLabel);
         _localGroup.Controls.Add(_previewLabel);
         _localGroup.ForeColor = SystemColors.ControlLight;
         _localGroup.Location = new Point(12, 112);
         _localGroup.Name = "_localGroup";
-        _localGroup.Size = new Size(516, 156);
+        _localGroup.Size = new Size(516, 188);
         _localGroup.TabIndex = 3;
         _localGroup.TabStop = false;
         _localGroup.Text = "Local server";
@@ -184,22 +190,50 @@ partial class AiServiceDialog
         _apiKeyBox.Size = new Size(124, 23);
         _apiKeyBox.TabIndex = 7;
         // 
+        // _ctxLabel
+        // 
+        _ctxLabel.ForeColor = SystemColors.ControlLight;
+        _ctxLabel.Location = new Point(12, 92);
+        _ctxLabel.Name = "_ctxLabel";
+        _ctxLabel.Size = new Size(90, 20);
+        _ctxLabel.TabIndex = 8;
+        _ctxLabel.Text = "Context size:";
+        // 
+        // _ctxBox
+        // 
+        _ctxBox.BackColor = Color.FromArgb(52, 52, 52);
+        _ctxBox.BorderStyle = BorderStyle.FixedSingle;
+        _ctxBox.ForeColor = SystemColors.ControlLight;
+        _ctxBox.Location = new Point(104, 90);
+        _ctxBox.Name = "_ctxBox";
+        _ctxBox.Size = new Size(100, 23);
+        _ctxBox.TabIndex = 9;
+        // 
+        // _ctxHintLabel
+        // 
+        _ctxHintLabel.ForeColor = SystemColors.ControlLight;
+        _ctxHintLabel.Location = new Point(212, 92);
+        _ctxHintLabel.Name = "_ctxHintLabel";
+        _ctxHintLabel.Size = new Size(292, 20);
+        _ctxHintLabel.TabIndex = 10;
+        _ctxHintLabel.Text = "tokens - leave blank to use the server's own value";
+        // 
         // _pathHintLabel
         // 
         _pathHintLabel.ForeColor = SystemColors.ControlLight;
-        _pathHintLabel.Location = new Point(12, 84);
+        _pathHintLabel.Location = new Point(12, 116);
         _pathHintLabel.Name = "_pathHintLabel";
         _pathHintLabel.Size = new Size(492, 32);
-        _pathHintLabel.TabIndex = 8;
+        _pathHintLabel.TabIndex = 11;
         _pathHintLabel.Text = "Lemonade uses /api/v1; llama.cpp uses /v1. Any non-empty key is accepted by most servers.";
         // 
         // _previewLabel
         // 
         _previewLabel.ForeColor = SystemColors.ControlLight;
-        _previewLabel.Location = new Point(12, 122);
+        _previewLabel.Location = new Point(12, 154);
         _previewLabel.Name = "_previewLabel";
         _previewLabel.Size = new Size(492, 26);
-        _previewLabel.TabIndex = 9;
+        _previewLabel.TabIndex = 12;
         // 
         // _filterGroup
         // 
@@ -207,7 +241,7 @@ partial class AiServiceDialog
         _filterGroup.Controls.Add(_filterConfig);
         _filterGroup.Controls.Add(_filterStatus);
         _filterGroup.ForeColor = SystemColors.ControlLight;
-        _filterGroup.Location = new Point(12, 278);
+        _filterGroup.Location = new Point(12, 310);
         _filterGroup.Name = "_filterGroup";
         _filterGroup.Size = new Size(516, 100);
         _filterGroup.TabIndex = 4;
@@ -253,7 +287,7 @@ partial class AiServiceDialog
         _ok.FlatAppearance.BorderColor = Color.FromArgb(108, 108, 108);
         _ok.FlatStyle = FlatStyle.Flat;
         _ok.ForeColor = SystemColors.ControlLight;
-        _ok.Location = new Point(346, 412);
+        _ok.Location = new Point(346, 444);
         _ok.Name = "_ok";
         _ok.Size = new Size(90, 28);
         _ok.TabIndex = 5;
@@ -267,7 +301,7 @@ partial class AiServiceDialog
         _cancel.FlatAppearance.BorderColor = Color.FromArgb(108, 108, 108);
         _cancel.FlatStyle = FlatStyle.Flat;
         _cancel.ForeColor = SystemColors.ControlLight;
-        _cancel.Location = new Point(438, 412);
+        _cancel.Location = new Point(438, 444);
         _cancel.Name = "_cancel";
         _cancel.Size = new Size(90, 28);
         _cancel.TabIndex = 6;
@@ -282,7 +316,7 @@ partial class AiServiceDialog
         AutoScaleMode = AutoScaleMode.Font;
         BackColor = Color.FromArgb(64, 64, 64);
         CancelButton = _cancel;
-        ClientSize = new Size(540, 452);
+        ClientSize = new Size(540, 484);
         Controls.Add(_introLabel);
         Controls.Add(_radioCopilot);
         Controls.Add(_radioLocal);
@@ -322,6 +356,9 @@ partial class AiServiceDialog
 	private System.Windows.Forms.ComboBox _pathBox;
 	private System.Windows.Forms.Label _keyLabel;
 	private System.Windows.Forms.ComboBox _apiKeyBox;
+	private System.Windows.Forms.Label _ctxLabel;
+	private System.Windows.Forms.TextBox _ctxBox;
+	private System.Windows.Forms.Label _ctxHintLabel;
 	private System.Windows.Forms.Label _pathHintLabel;
 	private System.Windows.Forms.Label _previewLabel;
 	private System.Windows.Forms.GroupBox _filterGroup;

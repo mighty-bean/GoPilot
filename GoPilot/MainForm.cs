@@ -160,6 +160,7 @@ public partial class MainForm : Form
         _copilot.UseLocalProvider      = false;
         _copilot.LocalProviderEndpoint = _settings.LocalProviderEndpoint;
         _copilot.LocalProviderApiKey   = _settings.LocalProviderApiKey;
+        _copilot.LocalProviderContextSize = _settings.LocalProviderContextSize;
         // Restore the last-used Auto-approve / Fleet toggles before the mode
         // combo is populated so ApplyModeChangeAsync's "Autopilot implies
         // auto-approve" rule sees the correct starting state. The CheckedChanged
@@ -2370,6 +2371,7 @@ public partial class MainForm : Form
             _settings.AiServiceProvider,
             _settings.LocalProviderEndpoint,
             _settings.LocalProviderApiKey,
+            _settings.LocalProviderContextSize,
             _settings.LocalFilterEnabled,
             _settings.LocalFilterEndpoint,
             _settings.LocalFilterModel,
@@ -2477,10 +2479,12 @@ public partial class MainForm : Form
         _settings.AiServiceProvider     = svc.Provider;
         _settings.LocalProviderEndpoint = svc.LocalEndpoint;
         _settings.LocalProviderApiKey   = svc.LocalApiKey;
+        _settings.LocalProviderContextSize = svc.LocalContextSize;
 
         _copilot.UseLocalProvider      = string.Equals(svc.Provider, "LocalOpenAI", StringComparison.OrdinalIgnoreCase);
         _copilot.LocalProviderEndpoint = svc.LocalEndpoint;
         _copilot.LocalProviderApiKey   = svc.LocalApiKey;
+        _copilot.LocalProviderContextSize = svc.LocalContextSize;
 
         // Filter LLM enable/config.
         _settings.LocalFilterEnabled   = svc.FilterEnabled;
@@ -2938,6 +2942,9 @@ public partial class MainForm : Form
                 {
                     _copilot.LocalProviderEndpoint = metadata.LocalProviderEndpoint;
                     _copilot.LocalProviderApiKey   = metadata.LocalProviderApiKey;
+                    // Context size is a property of the server, not of the
+                    // session, so it comes from the current settings.
+                    _copilot.LocalProviderContextSize = _settings.LocalProviderContextSize;
                 }
 
                 // Restore model. For a local provider the enumerated cloud list

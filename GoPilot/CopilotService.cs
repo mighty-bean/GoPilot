@@ -149,6 +149,13 @@ public sealed class CopilotService : IAsyncDisposable
     private readonly Dictionary<string, string> _modelDefaultEffort =
         new(StringComparer.OrdinalIgnoreCase);
     private bool _modelLimitsLogged = false;
+    // True once the runtime has reported its own context-window accounting for
+    // the current session (session.usage_info). That accounting covers the whole
+    // window -- system prompt, tool definitions and conversation -- and is
+    // computed by the CLI's tokenizer rather than the model provider, so it is
+    // available for local providers that report no usage of their own. Once seen,
+    // it supersedes the provider-reported input-token count for the meter.
+    private bool _usageInfoSeen = false;
 
     public double CurrentInputTokens     => _currentInputTokens;
     public double CurrentMaxPromptTokens => _currentMaxPromptTokens;
@@ -323,6 +330,14 @@ public sealed class CopilotService : IAsyncDisposable
     /// </summary>
     public string LocalProviderApiKey { get; set; } = "lemonade";
 
+    /// <summary>
+    /// User-supplied prompt-window ceiling (in tokens) for the local provider,
+    /// used when the server advertises no context size of its own. 0 means
+    /// "not set". A server-reported value always wins over this override,
+    /// because the server knows the size the model was actually loaded with.
+    /// </summary>
+    public int LocalProviderContextSize { get; set; } = 0;
+
     // Shared HttpClient for local-provider model enumeration.
     private static readonly HttpClient _localHttp = new() { Timeout = TimeSpan.FromSeconds(15) };
 
@@ -339,12 +354,23 @@ public sealed class CopilotService : IAsyncDisposable
     /// creates or resumes while a local provider is active, or null for the
     /// cloud path (leaving the SDK on its default Copilot backend).
     /// </summary>
+    /// <remarks>
+    /// GoPilot uses the singular, whole-session provider rather than the newer
+    /// named <c>providers</c>/<c>models</c> registry. The singular form bypasses
+    /// Copilot API authentication, so a purely local setup works without a
+    /// signed-in Copilot account; the registry form is additive to that auth.
+    /// The two are mutually exclusive - supplying both makes session.create fail
+    /// with "Cannot combine the legacy singular `provider` option with the
+    /// `providers`/`models` registry" - so the per-model window is expressed
+    /// through <see cref="ProviderConfig.MaxPromptTokens"/> here instead of
+    /// through a registry model entry.
+    /// </remarks>
     private GitHub.Copilot.ProviderConfig? BuildProviderConfig()
     {
         if (!UseLocalProvider || string.IsNullOrWhiteSpace(LocalProviderEndpoint))
             return null;
 
-        return new GitHub.Copilot.ProviderConfig
+        var config = new GitHub.Copilot.ProviderConfig
         {
             Type      = "openai",
             WireApi   = "completions",
@@ -353,32 +379,14 @@ public sealed class CopilotService : IAsyncDisposable
             ApiKey    = string.IsNullOrWhiteSpace(LocalProviderApiKey) ? "local" : LocalProviderApiKey.Trim(),
             ModelId   = ActiveModel,
         };
-    }
 
-    /// <summary>
-    /// Builds the optional per-model capability list for the active local model.
-    /// Supplies the context-window ceiling (when known) so the CLI treats the
-    /// prompt window correctly and the meter has a denominator. Returns null for
-    /// the cloud path or when no ceiling is known.
-    /// </summary>
-    private IList<GitHub.Copilot.ProviderModelConfig>? BuildProviderModels()
-    {
-        if (!UseLocalProvider || string.IsNullOrWhiteSpace(ActiveModel))
-            return null;
-
+        // Hand the runtime the prompt-window ceiling as well. Without it the CLI
+        // falls back to its own DEFAULT_TOKEN_LIMIT, which makes both the context
+        // meter and the automatic compaction trigger target the wrong window.
         var max = LookupMaxPromptTokens(ActiveModel);
-        if (max <= 0) return null;
+        if (max > 0) config.MaxPromptTokens = (int)max;
 
-        return new List<GitHub.Copilot.ProviderModelConfig>
-        {
-            new GitHub.Copilot.ProviderModelConfig
-            {
-                Id                     = ActiveModel,
-                ModelId                = ActiveModel,
-                MaxPromptTokens        = (int)max,
-                MaxContextWindowTokens = (int)max,
-            },
-        };
+        return config;
     }
 
     /// <summary>
@@ -412,6 +420,11 @@ public sealed class CopilotService : IAsyncDisposable
                     _modelPromptLimits[m.Id] = m.MaxPromptTokens;
             }
 
+            // The list only advertises what each model is capable of. The window
+            // it was actually loaded with can be smaller, and is what the agent
+            // loop has to live inside, so let it override where reported.
+            await ProbeLocalLoadedContextAsync(endpoint.TrimEnd('/'));
+
             _currentMaxPromptTokens = LookupMaxPromptTokens(ActiveModel);
             return models;
         }
@@ -424,9 +437,10 @@ public sealed class CopilotService : IAsyncDisposable
 
     /// <summary>
     /// Parses an OpenAI <c>/models</c> response into id + optional context
-    /// window. Tolerates the common context-length field names used by
-    /// Lemonade / llama.cpp / vLLM (<c>max_context_length</c>,
-    /// <c>context_length</c>, <c>max_model_len</c>, <c>ctx</c>).
+    /// window. Tolerates the field names used by the common local servers:
+    /// Lemonade reports <c>max_context_window</c>, vLLM <c>max_model_len</c>,
+    /// and llama.cpp nests the model's training context as
+    /// <c>meta.n_ctx_train</c>.
     /// </summary>
     private static List<LocalModelInfo> ParseLocalModels(string json)
     {
@@ -448,15 +462,14 @@ public sealed class CopilotService : IAsyncDisposable
                        : null;
                 if (string.IsNullOrWhiteSpace(id)) continue;
 
-                double ctx = 0;
-                foreach (var field in new[] { "max_context_length", "context_length", "max_model_len", "ctx", "max_prompt_tokens" })
+                double ctx = ReadContextField(item);
+
+                // llama.cpp nests the model's training context under "meta".
+                if (ctx <= 0
+                    && item.TryGetProperty("meta", out var metaEl)
+                    && metaEl.ValueKind == JsonValueKind.Object)
                 {
-                    if (item.TryGetProperty(field, out var cEl))
-                    {
-                        if (cEl.ValueKind == JsonValueKind.Number && cEl.TryGetDouble(out var cv)) { ctx = cv; break; }
-                        if (cEl.ValueKind == JsonValueKind.String && double.TryParse(cEl.GetString(),
-                                NumberStyles.Any, CultureInfo.InvariantCulture, out var cs)) { ctx = cs; break; }
-                    }
+                    ctx = ReadContextField(metaEl);
                 }
 
                 result.Add(new LocalModelInfo { Id = id!, MaxPromptTokens = ctx });
@@ -464,6 +477,123 @@ public sealed class CopilotService : IAsyncDisposable
         }
         catch { /* best-effort; return what we have */ }
         return result;
+    }
+
+    // Context-window field names seen across Lemonade, llama.cpp, vLLM and
+    // Ollama-compatible endpoints, most specific first.
+    private static readonly string[] ContextFieldNames =
+    {
+        "max_context_window", "max_context_length", "context_length",
+        "max_model_len", "n_ctx", "n_ctx_train", "ctx", "ctx_size",
+        "resolved_ctx_size", "max_prompt_tokens",
+    };
+
+    /// <summary>
+    /// Returns the first recognised context-window value on
+    /// <paramref name="element"/>, or 0 when the object carries none. Accepts
+    /// both numeric and string encodings, and ignores llama.cpp's "-1"
+    /// (automatic) sentinel.
+    /// </summary>
+    private static double ReadContextField(JsonElement element)
+    {
+        foreach (var field in ContextFieldNames)
+        {
+            if (!element.TryGetProperty(field, out var el)) continue;
+
+            double value = 0;
+            if (el.ValueKind == JsonValueKind.Number && el.TryGetDouble(out var n))
+                value = n;
+            else if (el.ValueKind == JsonValueKind.String && double.TryParse(el.GetString(),
+                         NumberStyles.Any, CultureInfo.InvariantCulture, out var s))
+                value = s;
+
+            if (value > 0) return value;
+        }
+        return 0;
+    }
+
+    /// <summary>
+    /// Best-effort discovery of the context window each local model was actually
+    /// loaded with, which can be smaller than the ceiling advertised by
+    /// <c>/models</c> and is the window the agent loop has to live inside.
+    /// Consults Lemonade's <c>/health</c> (every loaded model's
+    /// <c>recipe_options.ctx_size</c>) and, for the active model,
+    /// <c>/models/{id}/options</c> (<c>resolved_ctx_size</c>). Servers that do
+    /// not implement these endpoints simply 404 and leave the limits untouched.
+    /// </summary>
+    private async Task ProbeLocalLoadedContextAsync(string endpoint)
+    {
+        var health = await GetLocalJsonAsync(endpoint + "/health");
+        if (health != null)
+        {
+            using (health)
+            {
+                if (health.RootElement.ValueKind == JsonValueKind.Object
+                    && health.RootElement.TryGetProperty("all_models_loaded", out var loaded)
+                    && loaded.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var entry in loaded.EnumerateArray())
+                    {
+                        if (entry.ValueKind != JsonValueKind.Object) continue;
+                        if (!entry.TryGetProperty("model_name", out var nameEl)) continue;
+                        var name = nameEl.GetString();
+                        if (string.IsNullOrWhiteSpace(name)) continue;
+
+                        double ctx = 0;
+                        if (entry.TryGetProperty("recipe_options", out var opts)
+                            && opts.ValueKind == JsonValueKind.Object)
+                        {
+                            ctx = ReadContextField(opts);
+                        }
+                        if (ctx > 0) _modelPromptLimits[name!] = ctx;
+                    }
+                }
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(ActiveModel)) return;
+        if (_modelPromptLimits.TryGetValue(ActiveModel, out var known) && known > 0) return;
+
+        var options = await GetLocalJsonAsync(
+            endpoint + "/models/" + Uri.EscapeDataString(ActiveModel) + "/options");
+        if (options == null) return;
+        using (options)
+        {
+            if (options.RootElement.ValueKind != JsonValueKind.Object) return;
+            var ctx = ReadContextField(options.RootElement);
+            if (ctx <= 0
+                && options.RootElement.TryGetProperty("effective", out var eff)
+                && eff.ValueKind == JsonValueKind.Object)
+            {
+                ctx = ReadContextField(eff);
+            }
+            if (ctx > 0) _modelPromptLimits[ActiveModel] = ctx;
+        }
+    }
+
+    /// <summary>
+    /// GETs <paramref name="url"/> from the local provider and parses the body as
+    /// JSON, returning null on any transport, status or parse failure. The caller
+    /// owns the returned document.
+    /// </summary>
+    private async Task<JsonDocument?> GetLocalJsonAsync(string url)
+    {
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            if (!string.IsNullOrWhiteSpace(LocalProviderApiKey))
+                req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + LocalProviderApiKey.Trim());
+
+            using var resp = await _localHttp.SendAsync(req);
+            if (!resp.IsSuccessStatusCode) return null;
+
+            var body = await resp.Content.ReadAsStringAsync();
+            return JsonDocument.Parse(body);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -721,14 +851,14 @@ public sealed class CopilotService : IAsyncDisposable
                 }
                 else if (_modelPromptLimits.Count == 0)
                 {
-                    // Local provider returned models but none reported a context-window.
-                    // Surface a clear, actionable connection status so the user isn't
-                    // confused by an inactive context meter.
-                    // Local provider returned models but none reported a context-window.
-                    // Keep the statusStrip short — show a brief connection state and place
-                    // the longer, actionable explanation in the scrolling output via EmitStatus.
+                    // The server advertised no context window for any model. The
+                    // meter can still work from the user's configured override, and
+                    // once a turn runs the runtime reports its own accounting via
+                    // session.usage_info; say so rather than implying it is dead.
                     ConnectionStateChanged?.Invoke(this, "Connected");
-                    EmitStatus("Local provider did not report prompt-window limits; context meter disabled.");
+                    EmitStatus(LocalProviderContextSize > 0
+                        ? $"Local provider did not report prompt-window limits; using the configured {FormatTokensShort(LocalProviderContextSize)}-token context size."
+                        : "Local provider did not report prompt-window limits; set a context size in the AI Service dialog, or the meter will wait for the runtime's own accounting after the first turn.");
                 }
 
                 // Immediately update the UI meter with whatever we know so the
@@ -799,11 +929,14 @@ public sealed class CopilotService : IAsyncDisposable
     /// Only trusts SDK-reported limits gathered from ListModelsAsync.
     /// If the SDK has not reported limits yet, returns 0 so the UI shows an unknown denominator
     /// rather than guessing (different accounts/models can have different caps).
+    /// The one exception is a local provider that advertises nothing at all, where
+    /// the user's configured <see cref="LocalProviderContextSize"/> is used.
     /// </summary>
     private double LookupMaxPromptTokens(string? modelId)
     {
         if (string.IsNullOrEmpty(modelId)) return 0;
         if (_modelPromptLimits.TryGetValue(modelId, out var v) && v > 0) return v;
+        if (UseLocalProvider && LocalProviderContextSize > 0) return LocalProviderContextSize;
         return 0;
     }
 
@@ -1308,6 +1441,7 @@ public sealed class CopilotService : IAsyncDisposable
         }
         _approvedKinds.Clear();
         _currentInputTokens = 0;
+        _usageInfoSeen = false;
         ResetSessionAicTotal();
 
         var agents    = LoadTierAgents();
@@ -1325,7 +1459,6 @@ public sealed class CopilotService : IAsyncDisposable
             ToolSearch = BuildToolSearchConfig(),
             McpServers = BuildMcpServers(),
             Provider   = BuildProviderConfig(),
-            Models     = BuildProviderModels(),
         });
 
         _mainSession = session;
@@ -1512,7 +1645,6 @@ public sealed class CopilotService : IAsyncDisposable
                     ToolSearch = BuildToolSearchConfig(),
                     McpServers = BuildMcpServers(),
                     Provider   = BuildProviderConfig(),
-                    Models     = BuildProviderModels(),
                 });
 
                 _mainSession = session;
@@ -1555,7 +1687,6 @@ public sealed class CopilotService : IAsyncDisposable
             ToolSearch       = BuildToolSearchConfig(),
             McpServers       = BuildMcpServers(),
             Provider         = BuildProviderConfig(),
-            Models           = BuildProviderModels(),
         });
 
         _mainSession = session;
@@ -2287,6 +2418,7 @@ public sealed class CopilotService : IAsyncDisposable
         }
         _approvedKinds.Clear();
         _currentInputTokens = 0;
+        _usageInfoSeen = false;
         ResetSessionAicTotal();
     }
 
@@ -2605,7 +2737,8 @@ public sealed class CopilotService : IAsyncDisposable
                 // non-user initiator type stays correctly excluded.
                 if ((_mainSession == null || sessionId == _mainSession?.SessionId)
                     && IsUserInitiatedUsage(usage.Data.Initiator)
-                    && usage.Data.InputTokens.HasValue)
+                    && usage.Data.InputTokens.HasValue
+                    && !_usageInfoSeen)
                 {
                     _currentInputTokens = usage.Data.InputTokens.Value;
                     if (_currentMaxPromptTokens <= 0)
@@ -2643,6 +2776,69 @@ public sealed class CopilotService : IAsyncDisposable
                     }
                 }
                 break;
+
+            case SessionUsageInfoEvent usageInfo
+                when _mainSession == null || sessionId == _mainSession?.SessionId:
+                // The runtime's own context-window accounting, tokenized by the CLI
+                // rather than reported by the model provider. It covers the entire
+                // window (system prompt + tool definitions + conversation) and is
+                // the same figure the runtime's background compaction thresholds
+                // are measured against, so it drives the meter for every backend --
+                // including local providers that report no usage at all.
+                _usageInfoSeen = true;
+                _currentInputTokens = usageInfo.Data.CurrentTokens;
+                if (usageInfo.Data.TokenLimit > 0)
+                {
+                    _currentMaxPromptTokens = usageInfo.Data.TokenLimit;
+                    // Only cache this against the model for a local provider, where
+                    // the server usually advertises nothing. Cloud limits come from
+                    // the SDK's own model list, and the event carries no model id of
+                    // its own to guard against a mid-session model switch.
+                    if (UseLocalProvider && !string.IsNullOrEmpty(ActiveModel))
+                        _modelPromptLimits[ActiveModel] = usageInfo.Data.TokenLimit;
+                }
+                else if (_currentMaxPromptTokens <= 0)
+                {
+                    _currentMaxPromptTokens = LookupMaxPromptTokens(ActiveModel);
+                }
+
+                ContextUsageChanged?.Invoke(this, new ContextUsageEventArgs
+                {
+                    SessionId       = sessionId ?? "",
+                    InputTokens     = _currentInputTokens,
+                    MaxPromptTokens = _currentMaxPromptTokens,
+                });
+                break;
+
+            case SessionWarningEvent warn
+                when _mainSession == null || sessionId == _mainSession?.SessionId:
+            {
+                // The runtime warns rather than throws, so without this the turn
+                // just ends with no assistant reply and no explanation. The
+                // blocked-static-context case is the one a local model hits first:
+                // GoPilot's system message plus the tool definitions alone are
+                // around 10k tokens, so a model loaded with a small window can
+                // never fit a conversation on top of them.
+                var warnText = warn.Data.Message ?? "";
+                if (string.Equals(warn.Data.WarningType, "compaction_static_context_blocked",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    var window = _currentMaxPromptTokens > 0
+                        ? FormatTokensShort(_currentMaxPromptTokens) + " tokens"
+                        : "the configured window";
+                    warnText = $"The prompt cannot fit in {window}: the system message and tool definitions alone "
+                             + "exceed it, so no request was sent. Load the model with a larger context size, "
+                             + "reduce the enabled tools/MCP servers, or pick a model with a bigger window.";
+                }
+
+                MessageReceived?.Invoke(this, new SessionMessageEventArgs
+                {
+                    SessionId = sessionId,
+                    Content   = string.IsNullOrWhiteSpace(warnText) ? "The runtime reported a warning." : warnText,
+                    Kind      = MessageKind.Status,
+                });
+                break;
+            }
 
             case SessionInfoEvent info
                 when sessionId == _mainSession?.SessionId

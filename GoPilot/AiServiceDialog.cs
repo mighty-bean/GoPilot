@@ -27,6 +27,12 @@ public sealed partial class AiServiceDialog : Form
 	/// <summary>API key for the local provider. Valid only after OK.</summary>
 	public string LocalApiKey { get; private set; } = "";
 
+	/// <summary>
+	/// Prompt-window ceiling to assume for the local provider when the server
+	/// advertises none, in tokens. 0 means "not set". Valid only after OK.
+	/// </summary>
+	public int LocalContextSize { get; private set; }
+
 	/// <summary>Whether the local Filter LLM is enabled. Valid only after OK.</summary>
 	public bool FilterEnabled { get; private set; }
 
@@ -43,6 +49,7 @@ public sealed partial class AiServiceDialog : Form
 		string provider,
 		string localEndpoint,
 		string localApiKey,
+		int    localContextSize,
 		bool   filterEnabled,
 		string filterEndpoint,
 		string filterModel,
@@ -61,6 +68,9 @@ public sealed partial class AiServiceDialog : Form
 		_portBox.Text   = port;
 		_pathBox.Text   = string.IsNullOrWhiteSpace(path) ? "/api/v1" : path;
 		_apiKeyBox.Text = string.IsNullOrWhiteSpace(localApiKey) ? "lemonade" : localApiKey;
+		_ctxBox.Text    = localContextSize > 0
+			? localContextSize.ToString(CultureInfo.InvariantCulture)
+			: "";
 		_filterEnabled.Checked = filterEnabled;
 
 		UpdateEnabledStates();
@@ -233,9 +243,23 @@ public sealed partial class AiServiceDialog : Form
 					MessageBoxButtons.OK, MessageBoxIcon.Warning);
 				return;
 			}
-			Provider      = "LocalOpenAI";
-			LocalEndpoint = endpoint;
-			LocalApiKey   = _apiKeyBox.Text.Trim();
+
+			var ctxText = _ctxBox.Text.Trim();
+			var ctx     = 0;
+			if (ctxText.Length > 0
+				&& (!int.TryParse(ctxText, NumberStyles.Integer, CultureInfo.InvariantCulture, out ctx)
+					|| ctx <= 0))
+			{
+				MessageBox.Show(this,
+					"Context size must be a whole number of tokens, or blank to use the server's own value.",
+					"Choose AI Service", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+				return;
+			}
+
+			Provider         = "LocalOpenAI";
+			LocalEndpoint    = endpoint;
+			LocalApiKey      = _apiKeyBox.Text.Trim();
+			LocalContextSize = ctx;
 		}
 		else
 		{
