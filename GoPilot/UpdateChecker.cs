@@ -6,13 +6,13 @@ using System.Text.Json.Serialization;
 namespace GoPilot;
 
 /// <summary>
-/// Checks NuGet for newer versions of the GitHub.Copilot.SDK package
-/// and npm for newer versions of the Copilot CLI binary.
+/// Checks GitHub Releases for newer versions of the GitHub.Copilot.SDK package
+/// and GitHub Releases for newer versions of the Copilot CLI binary.
 /// </summary>
 internal static class UpdateChecker
 {
-	private const string NuGetUrl =
-		"https://api.nuget.org/v3-flatcontainer/github.copilot.sdk/index.json";
+	private const string GitHubSdkLatestReleaseUrl =
+		"https://api.github.com/repos/github/copilot-sdk/releases/latest";
 
 	// The GitHub Releases page is the source of truth for the Copilot CLI version.
 	// The npm @github/copilot-* packages have been observed to publish ahead of the
@@ -49,18 +49,23 @@ internal static class UpdateChecker
 	}
 
 	/// <summary>
-	/// Fetches all published versions of GitHub.Copilot.SDK from NuGet and returns
-	/// the latest one. Returns null if the check fails or the network is unavailable.
+	/// Fetches the latest GitHub.Copilot.SDK release tag from the GitHub Releases API
+	/// (github/copilot-sdk). The leading 'v' in the tag (e.g. 'v1.2.3') is stripped.
+	/// Returns null if the check fails or the network is unavailable.
 	/// </summary>
 	public static async Task<string?> GetLatestSdkVersionAsync()
 	{
 		try
 		{
-			var index = await _http
-				.GetFromJsonAsync<NuGetIndex>(NuGetUrl)
+			var release = await _http
+				.GetFromJsonAsync<GitHubRelease>(GitHubSdkLatestReleaseUrl)
 				.ConfigureAwait(false);
 
-			return index?.Versions?.LastOrDefault();
+			var tag = release?.TagName;
+			if (string.IsNullOrEmpty(tag))
+				return null;
+
+			return tag.StartsWith('v') || tag.StartsWith('V') ? tag[1..] : tag;
 		}
 		catch
 		{
@@ -116,11 +121,6 @@ internal static class UpdateChecker
 		return (major, minor, patch, pre);
 	}
 
-	private sealed class NuGetIndex
-	{
-		[JsonPropertyName("versions")]
-		public List<string>? Versions { get; set; }
-	}
 
 	// ── CLI version check ─────────────────────────────────────────────────────
 

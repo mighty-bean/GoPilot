@@ -5485,7 +5485,7 @@ public partial class MainForm : Form
     // ── Update checking ───────────────────────────────────────────────────────
 
     /// <summary>
-    /// Checks NuGet for a newer GitHub.Copilot.SDK release and notifies the user
+    /// Checks for a newer GitHub.Copilot.SDK release and notifies the user
     /// if one is found. Runs asynchronously at startup without blocking the UI.
     /// </summary>
     private async Task CheckForUpdatesAsync()
