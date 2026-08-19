@@ -126,6 +126,15 @@ internal sealed class GoPilotSettings
 	public int LocalProviderContextSize { get; set; } = 0;
 
 	/// <summary>
+	/// Built-in tools to hide from local-provider sessions, to buy back prompt
+	/// window on a small model. Null (the default) means the key was absent, so
+	/// GoPilot applies <see cref="CopilotService.DefaultLocalExcludedTools"/>; an
+	/// empty list means the user explicitly turned the trim off. Persisted under
+	/// <c>[AiService]</c> as a comma-separated <c>ExcludedTools=</c>.
+	/// </summary>
+	public List<string>? LocalProviderExcludedTools { get; set; } = null;
+
+	/// <summary>
 	/// When true, GoPilot enables the runtime's tool-search behaviour so MCP and
 	/// external tools beyond <see cref="ToolSearchDeferThreshold"/> are deferred
 	/// behind the built-in <c>tool_search_tool</c> instead of being pre-loaded
@@ -235,7 +244,12 @@ internal sealed class GoPilotSettings
 
 				var key = line[..eq].Trim().ToLowerInvariant();
 				var val = line[(eq + 1)..].Trim();
-				if (string.IsNullOrEmpty(val)) continue;
+				// Blank values normally mean "not set" and are ignored, but the
+				// tool trim distinguishes an absent key (use GoPilot's default)
+				// from an empty one (the user switched the trim off), so it has
+				// to see the empty value.
+				if (string.IsNullOrEmpty(val) && !(section == "aiservice" && key == "excludedtools"))
+					continue;
 
 				if (section == "skilltree" && key == "folder")
 				{
@@ -297,6 +311,13 @@ internal sealed class GoPilotSettings
 							if (int.TryParse(val, System.Globalization.NumberStyles.Integer,
 									System.Globalization.CultureInfo.InvariantCulture, out var cs) && cs > 0)
 								settings.LocalProviderContextSize = cs;
+							break;
+						case "excludedtools":
+							// Present-but-empty is meaningful: it is how the user
+							// switches the trim off, as distinct from an absent key.
+							settings.LocalProviderExcludedTools = val
+								.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+								.ToList();
 							break;
 					}
 				}
@@ -388,6 +409,8 @@ internal sealed class GoPilotSettings
 		sb.Append($"ApiKey={LocalProviderApiKey}\r\n");
 		sb.Append($"Model={LocalProviderModel}\r\n");
 		sb.Append($"ContextSize={LocalProviderContextSize.ToString(System.Globalization.CultureInfo.InvariantCulture)}\r\n");
+		if (LocalProviderExcludedTools != null)
+			sb.Append($"ExcludedTools={string.Join(",", LocalProviderExcludedTools)}\r\n");
 
 		sb.Append("\r\n[McpServers]\r\n");
 		var disabledSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

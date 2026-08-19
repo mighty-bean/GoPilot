@@ -161,6 +161,7 @@ public partial class MainForm : Form
         _copilot.LocalProviderEndpoint = _settings.LocalProviderEndpoint;
         _copilot.LocalProviderApiKey   = _settings.LocalProviderApiKey;
         _copilot.LocalProviderContextSize = _settings.LocalProviderContextSize;
+        _copilot.LocalProviderExcludedTools = ResolveExcludedTools(_settings.LocalProviderExcludedTools);
         // Restore the last-used Auto-approve / Fleet toggles before the mode
         // combo is populated so ApplyModeChangeAsync's "Autopilot implies
         // auto-approve" rule sees the correct starting state. The CheckedChanged
@@ -2372,6 +2373,7 @@ public partial class MainForm : Form
             _settings.LocalProviderEndpoint,
             _settings.LocalProviderApiKey,
             _settings.LocalProviderContextSize,
+            _settings.LocalProviderExcludedTools,
             _settings.LocalFilterEnabled,
             _settings.LocalFilterEndpoint,
             _settings.LocalFilterModel,
@@ -2480,11 +2482,13 @@ public partial class MainForm : Form
         _settings.LocalProviderEndpoint = svc.LocalEndpoint;
         _settings.LocalProviderApiKey   = svc.LocalApiKey;
         _settings.LocalProviderContextSize = svc.LocalContextSize;
+        _settings.LocalProviderExcludedTools = svc.LocalExcludedTools;
 
         _copilot.UseLocalProvider      = string.Equals(svc.Provider, "LocalOpenAI", StringComparison.OrdinalIgnoreCase);
         _copilot.LocalProviderEndpoint = svc.LocalEndpoint;
         _copilot.LocalProviderApiKey   = svc.LocalApiKey;
         _copilot.LocalProviderContextSize = svc.LocalContextSize;
+        _copilot.LocalProviderExcludedTools = ResolveExcludedTools(svc.LocalExcludedTools);
 
         // Filter LLM enable/config.
         _settings.LocalFilterEnabled   = svc.FilterEnabled;
@@ -2499,6 +2503,16 @@ public partial class MainForm : Form
 
         try { _settings.Save(); } catch { /* best-effort persist */ }
     }
+
+    /// <summary>
+    /// Turns the persisted setting into the list the service uses: an absent
+    /// setting takes GoPilot's default trim, while an empty one is the user
+    /// having switched the trim off and is honoured as "hide nothing".
+    /// </summary>
+    private static List<string> ResolveExcludedTools(IReadOnlyList<string>? configured) =>
+        configured == null
+            ? CopilotService.DefaultLocalExcludedTools.ToList()
+            : configured.ToList();
 
     /// <summary>
     /// Routes the Send button (and Ctrl+Enter): while awaiting Connect it
@@ -2943,8 +2957,10 @@ public partial class MainForm : Form
                     _copilot.LocalProviderEndpoint = metadata.LocalProviderEndpoint;
                     _copilot.LocalProviderApiKey   = metadata.LocalProviderApiKey;
                     // Context size is a property of the server, not of the
-                    // session, so it comes from the current settings.
+                    // session, so it comes from the current settings. The tool
+                    // trim is a preference and follows the same rule.
                     _copilot.LocalProviderContextSize = _settings.LocalProviderContextSize;
+                    _copilot.LocalProviderExcludedTools = ResolveExcludedTools(_settings.LocalProviderExcludedTools);
                 }
 
                 // Restore model. For a local provider the enumerated cloud list

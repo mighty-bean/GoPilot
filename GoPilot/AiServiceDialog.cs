@@ -33,6 +33,13 @@ public sealed partial class AiServiceDialog : Form
 	/// </summary>
 	public int LocalContextSize { get; private set; }
 
+	/// <summary>
+	/// Built-in tool names to hide from local-provider sessions. An empty list
+	/// means the user turned the trim off; null means it was never configured.
+	/// Valid only after OK.
+	/// </summary>
+	public List<string>? LocalExcludedTools { get; private set; }
+
 	/// <summary>Whether the local Filter LLM is enabled. Valid only after OK.</summary>
 	public bool FilterEnabled { get; private set; }
 
@@ -50,6 +57,7 @@ public sealed partial class AiServiceDialog : Form
 		string localEndpoint,
 		string localApiKey,
 		int    localContextSize,
+		IReadOnlyList<string>? localExcludedTools,
 		bool   filterEnabled,
 		string filterEndpoint,
 		string filterModel,
@@ -59,7 +67,15 @@ public sealed partial class AiServiceDialog : Form
 		FilterModel     = filterModel     ?? "";
 		FilterThreshold = filterThreshold;
 
-		SplitEndpoint(localEndpoint, out var host, out var port, out var path);
+		// Seed the local-provider results with what came in, so choosing the
+		// cloud provider leaves the local configuration untouched rather than
+		// blanking it.
+		LocalEndpoint      = localEndpoint ?? "";
+		LocalApiKey        = localApiKey   ?? "";
+		LocalContextSize   = localContextSize;
+		LocalExcludedTools = localExcludedTools?.ToList();
+
+		SplitEndpoint(LocalEndpoint, out var host, out var port, out var path);
 		InitializeComponent();
 
 		_radioCopilot.Checked = !string.Equals(provider, "LocalOpenAI", StringComparison.OrdinalIgnoreCase);
@@ -71,6 +87,17 @@ public sealed partial class AiServiceDialog : Form
 		_ctxBox.Text    = localContextSize > 0
 			? localContextSize.ToString(CultureInfo.InvariantCulture)
 			: "";
+
+		// A null list means the setting has never been written, so the dialog
+		// offers the default trim already ticked. An empty list is the user
+		// having deliberately switched it off, and is left unticked with the
+		// default text still on show so it can be turned back on.
+		var trimNames = localExcludedTools != null && localExcludedTools.Count > 0
+			? localExcludedTools
+			: CopilotService.DefaultLocalExcludedTools;
+		_trimCheck.Checked = localExcludedTools == null || localExcludedTools.Count > 0;
+		_trimBox.Text      = string.Join(", ", trimNames);
+
 		_filterEnabled.Checked = filterEnabled;
 
 		UpdateEnabledStates();
@@ -79,6 +106,8 @@ public sealed partial class AiServiceDialog : Form
 	}
 
 	private void RadioProvider_CheckedChanged(object? sender, EventArgs e) => UpdateEnabledStates();
+
+	private void TrimCheck_CheckedChanged(object? sender, EventArgs e) => UpdateEnabledStates();
 
 	private void EndpointField_TextChanged(object? sender, EventArgs e) => UpdatePreview();
 
@@ -98,6 +127,9 @@ public sealed partial class AiServiceDialog : Form
 		foreach (Control c in _localGroup.Controls)
 			c.Enabled = local;
 		_localGroup.ForeColor = local ? AppTheme.TextPrimary : AppTheme.TextMuted;
+
+		// The tool list only means anything while the trim is switched on.
+		_trimBox.Enabled = local && _trimCheck.Checked;
 	}
 
 	private void UpdateFilterStatus()
@@ -260,6 +292,12 @@ public sealed partial class AiServiceDialog : Form
 			LocalEndpoint    = endpoint;
 			LocalApiKey      = _apiKeyBox.Text.Trim();
 			LocalContextSize = ctx;
+			LocalExcludedTools = _trimCheck.Checked
+				? _trimBox.Text
+					.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+					.Distinct(StringComparer.OrdinalIgnoreCase)
+					.ToList()
+				: new List<string>();
 		}
 		else
 		{

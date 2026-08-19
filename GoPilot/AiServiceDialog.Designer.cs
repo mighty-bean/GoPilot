@@ -39,6 +39,9 @@ partial class AiServiceDialog
         _ctxLabel = new Label();
         _ctxBox = new TextBox();
         _ctxHintLabel = new Label();
+        _trimCheck = new CheckBox();
+        _trimBox = new TextBox();
+        _trimHintLabel = new Label();
         _pathHintLabel = new Label();
         _previewLabel = new Label();
         _filterGroup = new GroupBox();
@@ -97,12 +100,15 @@ partial class AiServiceDialog
         _localGroup.Controls.Add(_ctxLabel);
         _localGroup.Controls.Add(_ctxBox);
         _localGroup.Controls.Add(_ctxHintLabel);
+        _localGroup.Controls.Add(_trimCheck);
+        _localGroup.Controls.Add(_trimBox);
+        _localGroup.Controls.Add(_trimHintLabel);
         _localGroup.Controls.Add(_pathHintLabel);
         _localGroup.Controls.Add(_previewLabel);
         _localGroup.ForeColor = SystemColors.ControlLight;
         _localGroup.Location = new Point(12, 112);
         _localGroup.Name = "_localGroup";
-        _localGroup.Size = new Size(516, 188);
+        _localGroup.Size = new Size(516, 276);
         _localGroup.TabIndex = 3;
         _localGroup.TabStop = false;
         _localGroup.Text = "Local server";
@@ -218,22 +224,51 @@ partial class AiServiceDialog
         _ctxHintLabel.TabIndex = 10;
         _ctxHintLabel.Text = "tokens - leave blank to use the server's own value";
         // 
+        // _trimCheck
+        // 
+        _trimCheck.ForeColor = SystemColors.ControlLight;
+        _trimCheck.Location = new Point(12, 118);
+        _trimCheck.Name = "_trimCheck";
+        _trimCheck.Size = new Size(492, 20);
+        _trimCheck.TabIndex = 11;
+        _trimCheck.Text = "Hide these built-in tools to free up prompt window";
+        _trimCheck.CheckedChanged += TrimCheck_CheckedChanged;
+        // 
+        // _trimBox
+        // 
+        _trimBox.BackColor = Color.FromArgb(52, 52, 52);
+        _trimBox.BorderStyle = BorderStyle.FixedSingle;
+        _trimBox.ForeColor = SystemColors.ControlLight;
+        _trimBox.Location = new Point(12, 142);
+        _trimBox.Name = "_trimBox";
+        _trimBox.Size = new Size(492, 23);
+        _trimBox.TabIndex = 12;
+        // 
+        // _trimHintLabel
+        // 
+        _trimHintLabel.ForeColor = SystemColors.ControlLight;
+        _trimHintLabel.Location = new Point(12, 168);
+        _trimHintLabel.Name = "_trimHintLabel";
+        _trimHintLabel.Size = new Size(492, 32);
+        _trimHintLabel.TabIndex = 13;
+        _trimHintLabel.Text = "Comma-separated names. The default hides sub-agent dispatch, saving about 3,000 tokens per prompt; add skill and sql for 1,300 more. Ignored while Fleet mode is on.";
+        // 
         // _pathHintLabel
         // 
         _pathHintLabel.ForeColor = SystemColors.ControlLight;
-        _pathHintLabel.Location = new Point(12, 116);
+        _pathHintLabel.Location = new Point(12, 204);
         _pathHintLabel.Name = "_pathHintLabel";
         _pathHintLabel.Size = new Size(492, 32);
-        _pathHintLabel.TabIndex = 11;
+        _pathHintLabel.TabIndex = 14;
         _pathHintLabel.Text = "Lemonade uses /api/v1; llama.cpp uses /v1. Any non-empty key is accepted by most servers.";
         // 
         // _previewLabel
         // 
         _previewLabel.ForeColor = SystemColors.ControlLight;
-        _previewLabel.Location = new Point(12, 154);
+        _previewLabel.Location = new Point(12, 242);
         _previewLabel.Name = "_previewLabel";
         _previewLabel.Size = new Size(492, 26);
-        _previewLabel.TabIndex = 12;
+        _previewLabel.TabIndex = 15;
         // 
         // _filterGroup
         // 
@@ -241,7 +276,7 @@ partial class AiServiceDialog
         _filterGroup.Controls.Add(_filterConfig);
         _filterGroup.Controls.Add(_filterStatus);
         _filterGroup.ForeColor = SystemColors.ControlLight;
-        _filterGroup.Location = new Point(12, 310);
+        _filterGroup.Location = new Point(12, 398);
         _filterGroup.Name = "_filterGroup";
         _filterGroup.Size = new Size(516, 100);
         _filterGroup.TabIndex = 4;
@@ -287,7 +322,7 @@ partial class AiServiceDialog
         _ok.FlatAppearance.BorderColor = Color.FromArgb(108, 108, 108);
         _ok.FlatStyle = FlatStyle.Flat;
         _ok.ForeColor = SystemColors.ControlLight;
-        _ok.Location = new Point(346, 444);
+        _ok.Location = new Point(346, 532);
         _ok.Name = "_ok";
         _ok.Size = new Size(90, 28);
         _ok.TabIndex = 5;
@@ -301,7 +336,7 @@ partial class AiServiceDialog
         _cancel.FlatAppearance.BorderColor = Color.FromArgb(108, 108, 108);
         _cancel.FlatStyle = FlatStyle.Flat;
         _cancel.ForeColor = SystemColors.ControlLight;
-        _cancel.Location = new Point(438, 444);
+        _cancel.Location = new Point(438, 532);
         _cancel.Name = "_cancel";
         _cancel.Size = new Size(90, 28);
         _cancel.TabIndex = 6;
@@ -316,7 +351,7 @@ partial class AiServiceDialog
         AutoScaleMode = AutoScaleMode.Font;
         BackColor = Color.FromArgb(64, 64, 64);
         CancelButton = _cancel;
-        ClientSize = new Size(540, 484);
+        ClientSize = new Size(540, 572);
         Controls.Add(_introLabel);
         Controls.Add(_radioCopilot);
         Controls.Add(_radioLocal);
@@ -359,6 +394,9 @@ partial class AiServiceDialog
 	private System.Windows.Forms.Label _ctxLabel;
 	private System.Windows.Forms.TextBox _ctxBox;
 	private System.Windows.Forms.Label _ctxHintLabel;
+	private System.Windows.Forms.CheckBox _trimCheck;
+	private System.Windows.Forms.TextBox _trimBox;
+	private System.Windows.Forms.Label _trimHintLabel;
 	private System.Windows.Forms.Label _pathHintLabel;
 	private System.Windows.Forms.Label _previewLabel;
 	private System.Windows.Forms.GroupBox _filterGroup;

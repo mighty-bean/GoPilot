@@ -338,6 +338,50 @@ public sealed class CopilotService : IAsyncDisposable
     /// </summary>
     public int LocalProviderContextSize { get; set; } = 0;
 
+    /// <summary>
+    /// The built-in tools GoPilot hides from a local-provider session, as a way of
+    /// buying back prompt window. Empty disables the trim. Ignored entirely for
+    /// cloud sessions, whose windows are large enough not to need it.
+    /// </summary>
+    /// <remarks>
+    /// The tool definitions are a fixed cost paid on every request, and the system
+    /// message grows with them because it documents the tools. Measured against the
+    /// runtime's own tokenizer, hiding the sub-agent tools takes the static context
+    /// from roughly 10.7k tokens to 6.3k, which is the difference between a 16k
+    /// model having room for a conversation and not.
+    /// </remarks>
+    public List<string> LocalProviderExcludedTools { get; set; } = new();
+
+    /// <summary>
+    /// The default trim: the sub-agent dispatch machinery, which carries the
+    /// largest tool descriptions and is of little use to a small local model that
+    /// cannot drive a fleet of agents anyway.
+    /// </summary>
+    public static readonly string[] DefaultLocalExcludedTools =
+    {
+        "task", "read_agent", "list_agents", "write_agent",
+    };
+
+    /// <summary>
+    /// The tool names to hide from the session being created, or null to leave the
+    /// runtime's tool set alone. Only ever trims a local-provider session, and
+    /// never while fleet mode is on, because fleet mode dispatches through the
+    /// sub-agent tools this trims.
+    /// </summary>
+    private List<string>? BuildExcludedTools()
+    {
+        if (!UseLocalProvider || FleetMode) return null;
+        if (LocalProviderExcludedTools == null || LocalProviderExcludedTools.Count == 0) return null;
+
+        var names = LocalProviderExcludedTools
+            .Where(n => !string.IsNullOrWhiteSpace(n))
+            .Select(n => n.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return names.Count > 0 ? names : null;
+    }
+
     // Shared HttpClient for local-provider model enumeration.
     private static readonly HttpClient _localHttp = new() { Timeout = TimeSpan.FromSeconds(15) };
 
@@ -1458,6 +1502,7 @@ public sealed class CopilotService : IAsyncDisposable
             SystemMessage = BuildSystemMessage(),
             ToolSearch = BuildToolSearchConfig(),
             McpServers = BuildMcpServers(),
+            ExcludedTools = BuildExcludedTools(),
             Provider   = BuildProviderConfig(),
         });
 
@@ -1644,6 +1689,7 @@ public sealed class CopilotService : IAsyncDisposable
                     SystemMessage = BuildSystemMessage(),
                     ToolSearch = BuildToolSearchConfig(),
                     McpServers = BuildMcpServers(),
+                    ExcludedTools = BuildExcludedTools(),
                     Provider   = BuildProviderConfig(),
                 });
 
@@ -1686,6 +1732,7 @@ public sealed class CopilotService : IAsyncDisposable
             SkillDirectories = skillDirs.Count > 0 ? skillDirs : null,
             ToolSearch       = BuildToolSearchConfig(),
             McpServers       = BuildMcpServers(),
+            ExcludedTools    = BuildExcludedTools(),
             Provider         = BuildProviderConfig(),
         });
 

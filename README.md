@@ -153,8 +153,20 @@ For a local server you supply:
 | Port | The server's port. |
 | API path | The OpenAI base path. Lemonade uses `/api/v1`; llama.cpp uses `/v1`. Defaults to `/api/v1`. |
 | API key | Forwarded as a Bearer token. Most local servers accept any non-empty string; defaults to `lemonade`. |
+| Context size | The model's prompt window in tokens, used to drive the context meter and auto-compaction. Leave blank to let GoPilot ask the server. |
+| Hide these built-in tools | A comma-separated list of built-in tools withheld from the session, to buy back prompt window on a small model. See [Trimming built-in tools](#trimming-built-in-tools). |
 
 The dialog also has a **Filter LLM** section - the same local prompt-reduction/summarizing pre-pass described under [Local LLM Filter](#local-llm-filter). Tick the box to enable it and use **Configure...** to pick the Ollama host, model, and confidence threshold. (The **Options ▸ 🧠 Local LLM filter** toggle remains available too.)
+
+### Trimming built-in tools
+
+Tool definitions are a fixed cost paid on every request, and the system message grows alongside them because it documents the tools. Measured against the CLI's own tokenizer, GoPilot's default tool set costs about 10,700 tokens before a single word of conversation - more than an 8k-window model has to spend at all.
+
+The default trim hides the sub-agent dispatch tools (`task`, `read_agent`, `list_agents`, `write_agent`), taking that fixed cost to roughly 7,600 tokens. Adding `skill` and `sql` takes it to about 6,300. Untick the box to send the full tool set.
+
+The trim applies to local providers only - cloud windows are large enough not to need it - and is **ignored while Fleet mode is on**, because Fleet mode dispatches work through the very sub-agent tools the default trim hides. A local Fleet session therefore pays the full fixed cost with no warning, so on a small model either leave Fleet off or expect very little room for conversation.
+
+If the fixed cost does not fit the window at all, the CLI blocks the turn rather than sending it; GoPilot surfaces that as a warning in the output panel telling you to raise the context size or trim more tools.
 
 ### The Connect step
 
@@ -172,7 +184,7 @@ Notes:
 - The Copilot CLI still drives the session for both services - all skill/agent/MCP/tool machinery is unchanged. A local provider only changes where inference runs.
 - The provider is baked in at session creation, so a running session cannot be switched between cloud and local; start a new session to change it.
 - The chosen service is recorded per-session, so **Past Sessions ▸ Resume** restores the correct backend. Sessions created before this feature default to Copilot.
-- Choices persist in `gopilot.ini` under `[AiService]` (`Provider`, `Endpoint`, `ApiKey`, `Model`); the local model is remembered separately from the cloud model.
+- Choices persist in `gopilot.ini` under `[AiService]` (`Provider`, `Endpoint`, `ApiKey`, `Model`, `ContextSize`, `ExcludedTools`); the local model is remembered separately from the cloud model. An absent `ExcludedTools` means the default trim applies; a present but empty one means you switched the trim off.
 
 ## Refreshing the Session
 
@@ -208,6 +220,8 @@ Every session GoPilot creates gets a stable ID of the form `{LeafFolder}-{MM-dd-
 ## Fleet Mode
 
 With Fleet on, Copilot can spawn parallel sub-agents on different parts of a task. The output panel shows each agent's progress; the session completes when the last sub-agent finishes. Best for large refactors and tasks that decompose cleanly.
+
+Fleet mode and the local-provider tool trim are mutually exclusive: because Fleet dispatches work through the sub-agent tools that the trim hides, GoPilot silently skips the trim whenever Fleet is on. A local session with Fleet enabled therefore pays the full built-in tool overhead - see [Trimming built-in tools](#trimming-built-in-tools).
 
 ## Tool Search
 
