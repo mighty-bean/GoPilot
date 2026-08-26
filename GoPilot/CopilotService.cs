@@ -103,6 +103,45 @@ public sealed class AicUsageEventArgs : EventArgs
     public string? Display { get; init; }
 }
 
+/// <summary>
+/// Progress of an LLM-powered history compaction (<c>session.compaction_start</c>
+/// and <c>session.compaction_complete</c>), whether started by the runtime's own
+/// background threshold or by GoPilot's Refresh menu.
+/// </summary>
+/// <remarks>
+/// Compaction is a full-context call to the configured model provider, so on a
+/// local provider it can run for minutes. Without this event the UI has no way to
+/// tell that state apart from a wedged session.
+/// </remarks>
+public sealed class CompactionEventArgs : EventArgs
+{
+    public string SessionId { get; init; } = "";
+    /// <summary>True for <c>compaction_start</c>, false for <c>compaction_complete</c>.</summary>
+    public bool InProgress { get; init; }
+    /// <summary>Runtime's own trigger name (threshold, manual, context_limit_retry, ...), or "".</summary>
+    public string Trigger { get; init; } = "";
+    /// <summary>Model the compaction call itself runs against, when reported.</summary>
+    public string Model { get; init; } = "";
+    /// <summary>Whole-window token count before compaction, when reported.</summary>
+    public double TokensBefore { get; init; }
+    /// <summary>Whole-window token count after compaction; only meaningful on completion.</summary>
+    public double TokensAfter { get; init; }
+    /// <summary>Prompt-window ceiling the compaction targeted, when reported.</summary>
+    public double TokenLimit { get; init; }
+    /// <summary>Completion only: whether the compaction succeeded.</summary>
+    public bool Success { get; init; }
+    /// <summary>Completion only: the runtime's error text when it failed.</summary>
+    public string Error { get; init; } = "";
+    /// <summary>Completion only: conversation messages the compaction removed.</summary>
+    public long MessagesRemoved { get; init; }
+    /// <summary>
+    /// Completion only: the pass was cancelled or its session went away, so there
+    /// is no outcome to report. Consumers should unwind their compacting state
+    /// silently rather than reporting a failure.
+    /// </summary>
+    public bool Abandoned { get; init; }
+}
+
 public sealed class CopilotService : IAsyncDisposable
 {
     private CopilotClient? _client;
@@ -145,11 +184,27 @@ public sealed class CopilotService : IAsyncDisposable
     /// conversation is dropped and replaced by the seeded resume note.
     /// </summary>
     public event EventHandler<ContextClearedEventArgs>? ContextCleared;
+    /// <summary>
+    /// Fires when the runtime starts or finishes an LLM-powered history
+    /// compaction on the main session. Subscribe to keep the UI honest: a
+    /// compaction is a full-context provider call and looks exactly like a hung
+    /// session until it is surfaced.
+    /// </summary>
+    public event EventHandler<CompactionEventArgs>? CompactionStateChanged;
 
     // Most recent input-token reading from the main session (size of the prompt
     // window the model just consumed) and the active model's prompt-token ceiling.
     private double _currentInputTokens     = 0;
     private double _currentMaxPromptTokens = 0;
+    // True between session.compaction_start and session.compaction_complete on the
+    // main session. Guards GoPilot's own refresh paths so they never stack a
+    // second full-context summarisation on top of the runtime's.
+    private bool _compactionInFlight = false;
+    // Set as soon as an abort is requested, so a manual compaction that resolves as
+    // a throw or an unsuccessful result can tell "the user cancelled" apart from
+    // "the runtime declined" - only the latter should escalate. Cleared on entry to
+    // CompactSessionAsync, so an earlier abort cannot mislabel a later compaction.
+    private bool _manualCompactAborted = false;
     // Running session cost in nano-AIU (1 AIC = 1e9 nano-AIU = 0.01 USD), summed
     // across every API call in the session including sub-agents. Reset on new/
     // restarted sessions; preserved through in-place compaction.
@@ -177,6 +232,35 @@ public sealed class CopilotService : IAsyncDisposable
 
     public double CurrentInputTokens     => _currentInputTokens;
     public double CurrentMaxPromptTokens => _currentMaxPromptTokens;
+    /// <summary>
+    /// True while the runtime is running an LLM-powered compaction on the main
+    /// session. Callers must not start a refresh, a handoff or another compaction
+    /// while this is set.
+    /// </summary>
+    public bool IsCompacting => _compactionInFlight;
+
+    /// <summary>
+    /// Drops any in-flight compaction state and tells consumers about it.
+    /// </summary>
+    /// <remarks>
+    /// Once the main session is replaced, a late <c>compaction_complete</c> for the
+    /// old one is filtered out by the main-session guard in
+    /// <see cref="HandleSessionEvent"/> and never arrives. Without this, a teardown
+    /// during a compaction leaves the UI reporting "compacting" for the rest of
+    /// the run, with the refresh commands locked out behind that state.
+    /// </remarks>
+    private void AbandonCompactionState()
+    {
+        if (!_compactionInFlight) return;
+        _compactionInFlight = false;
+        CompactionStateChanged?.Invoke(this, new CompactionEventArgs
+        {
+            SessionId  = _mainSession?.SessionId ?? "",
+            InProgress = false,
+            Success    = false,
+            Abandoned  = true,
+        });
+    }
     // Cumulative session cost expressed in AIC (AI Credits).
     public double CurrentSessionAic      => _sessionAicNano / 1_000_000_000.0;
 
@@ -379,6 +463,64 @@ public sealed class CopilotService : IAsyncDisposable
     {
         "task", "read_agent", "list_agents", "write_agent",
     };
+
+    // -- Automatic (background) compaction ------------------------------------
+
+    /// <summary>
+    /// The runtime's own defaults for <see cref="GitHub.Copilot.InfiniteSessionConfig"/>,
+    /// applied when GoPilot supplies no configuration of its own. Mirrored here so
+    /// the UI can reason about the same numbers the runtime is acting on.
+    /// </summary>
+    public const double DefaultBackgroundCompactionThreshold = 0.80;
+    public const double DefaultBufferExhaustionThreshold     = 0.95;
+
+    /// <summary>
+    /// The thresholds GoPilot substitutes for a local-provider session.
+    /// </summary>
+    /// <remarks>
+    /// Compaction is a full-context call to the same provider that serves the
+    /// conversation. On the cloud that finishes in seconds and the runtime's
+    /// 0.80/0.95 pair leaves ample room. On a local server the call is far slower
+    /// and, worse, contends with the session's own requests on one GPU, so the
+    /// 15-point gap between "start compacting" and "block until compaction
+    /// finishes" is routinely consumed before the summary comes back - which is
+    /// what a wedged local session actually is. Starting earlier and blocking
+    /// later widens that gap to 30 points, giving the asynchronous pass roughly
+    /// twice the wall-clock time to land before it turns into a stall.
+    /// </remarks>
+    public const double LocalBackgroundCompactionThreshold = 0.65;
+    public const double LocalBufferExhaustionThreshold     = 0.95;
+
+    /// <summary>
+    /// The context-utilisation fraction at which the runtime will start compacting
+    /// the session GoPilot would create right now. The UI derives its own
+    /// "refresh?" prompt from this so it never fires after the runtime has already
+    /// begun a compaction of its own.
+    /// </summary>
+    public double EffectiveBackgroundCompactionThreshold =>
+        UseLocalProvider ? LocalBackgroundCompactionThreshold : DefaultBackgroundCompactionThreshold;
+
+    /// <summary>
+    /// The infinite-session configuration attached to every session GoPilot
+    /// creates or resumes, or null to accept the runtime's defaults.
+    /// </summary>
+    /// <remarks>
+    /// Automatic compaction is on by default in the runtime whether or not
+    /// GoPilot configures it; this only retunes the thresholds for the local
+    /// provider, where the default pair is too tight. Returning null for the
+    /// cloud path deliberately preserves the runtime's own behaviour.
+    /// </remarks>
+    private GitHub.Copilot.InfiniteSessionConfig? BuildInfiniteSessionConfig()
+    {
+        if (!UseLocalProvider) return null;
+
+        return new GitHub.Copilot.InfiniteSessionConfig
+        {
+            Enabled                       = true,
+            BackgroundCompactionThreshold = LocalBackgroundCompactionThreshold,
+            BufferExhaustionThreshold     = LocalBufferExhaustionThreshold,
+        };
+    }
 
     /// <summary>
     /// The tool names to hide from the session being created, or null to leave the
@@ -1496,6 +1638,8 @@ public sealed class CopilotService : IAsyncDisposable
 
         ConnectionStateChanged?.Invoke(this, "Reconnecting...");
 
+        AbandonCompactionState();
+
         _lifecycleSubscription?.Dispose();
         _lifecycleSubscription = null;
         _lifecycleDeletedSubscription?.Dispose();
@@ -1611,6 +1755,8 @@ public sealed class CopilotService : IAsyncDisposable
     {
         await EnsureStartedAsync();
 
+        AbandonCompactionState();
+
         // Tear down existing main session if any
         if (_mainSession != null)
         {
@@ -1640,6 +1786,7 @@ public sealed class CopilotService : IAsyncDisposable
             ExcludedTools = BuildExcludedTools(),
             Tools      = BuildTools(),
             Provider   = BuildProviderConfig(),
+            InfiniteSessions = BuildInfiniteSessionConfig(),
         });
 
         _mainSession = session;
@@ -1800,6 +1947,10 @@ public sealed class CopilotService : IAsyncDisposable
     {
         var expiredSessionId = _mainSession?.SessionId;
 
+        // Any compaction the expired session was running died with it, and its
+        // completion event can no longer match the replacement session.
+        AbandonCompactionState();
+
         if (_mainSession != null)
         {
             var stale = _mainSession;
@@ -1828,6 +1979,7 @@ public sealed class CopilotService : IAsyncDisposable
                     ExcludedTools = BuildExcludedTools(),
                     Tools      = BuildTools(),
                     Provider   = BuildProviderConfig(),
+                    InfiniteSessions = BuildInfiniteSessionConfig(),
                 });
 
                 _mainSession = session;
@@ -1872,6 +2024,7 @@ public sealed class CopilotService : IAsyncDisposable
             ExcludedTools    = BuildExcludedTools(),
             Tools            = BuildTools(),
             Provider         = BuildProviderConfig(),
+            InfiniteSessions = BuildInfiniteSessionConfig(),
         });
 
         _mainSession = session;
@@ -2595,6 +2748,7 @@ public sealed class CopilotService : IAsyncDisposable
 
     public async Task ResetSessionAsync()
     {
+        AbandonCompactionState();
         if (_mainSession != null)
         {
             await _mainSession.DisposeAsync();
@@ -2608,33 +2762,142 @@ public sealed class CopilotService : IAsyncDisposable
     }
 
     /// <summary>
+    /// Outcome of a manual in-place compaction.
+    /// </summary>
+    public enum CompactOutcome
+    {
+        /// <summary>The runtime compacted the history.</summary>
+        Success,
+        /// <summary>The runtime declined or errored; the conversation is untouched.</summary>
+        Failed,
+        /// <summary>
+        /// GoPilot stopped waiting. The runtime may still be compacting, so callers
+        /// must not start another full-context turn on this session.
+        /// </summary>
+        TimedOut,
+        /// <summary>
+        /// The compaction was deliberately abandoned (the user pressed Stop). Not a
+        /// failure, and specifically not a reason to escalate to another attempt.
+        /// </summary>
+        Aborted,
+    }
+
+    /// <summary>
     /// Asks the CLI to compact the current session in place, summarising history
     /// to free context-window headroom while preserving the session ID.
-    /// Returns true on success; false if the SDK call throws (e.g. the experimental
-    /// endpoint is unavailable for this server build).
     /// </summary>
-    public async Task<bool> CompactSessionAsync()
+    /// <param name="timeout">
+    /// How long to wait before abandoning the compaction. Compaction is a
+    /// full-context call to the configured model provider, so on a local provider
+    /// it can run for many minutes; without a bound the caller waits forever and
+    /// the UI is indistinguishable from a hung session. On expiry the runtime's
+    /// own manual compaction is aborted so the session is left usable.
+    /// Defaults to ten minutes.
+    /// </param>
+    public async Task<CompactOutcome> CompactSessionAsync(TimeSpan? timeout = null)
     {
-        if (_mainSession == null) return false;
+        if (_mainSession == null) return CompactOutcome.Failed;
+
+        var session = _mainSession;
+        _manualCompactAborted = false;
+        using var cts = new CancellationTokenSource(timeout ?? TimeSpan.FromMinutes(10));
         try
         {
 #pragma warning disable GHCP001
-            var result = await _mainSession.Rpc.History.CompactAsync();
+            var result = await session.Rpc.History.CompactAsync(
+                new GitHub.Copilot.Rpc.SessionHistoryCompactRequest
+                {
+                    Trigger = GitHub.Copilot.Rpc.SessionHistoryCompactRequestTrigger.Manual,
+                },
+                cts.Token);
 #pragma warning restore GHCP001
-            if (!result.Success) return false;
+            // An abort resolves the pending call as either a throw or an
+            // unsuccessful result, so check for it before reporting failure:
+            // "the user cancelled" must not read as "try something else".
+            if (_manualCompactAborted) return CompactOutcome.Aborted;
+            if (!result.Success) return CompactOutcome.Failed;
 
-            // Optimistically zero the meter — the next AssistantUsageEvent will
-            // restore the true value once the user sends another prompt.
-            _currentInputTokens = 0;
+            // The result carries the runtime's own post-compaction accounting, so
+            // use it rather than guessing; fall back to zero when it is absent.
+            _currentInputTokens = result.ContextWindow?.CurrentTokens ?? 0;
+            if (result.ContextWindow?.TokenLimit is > 0 and var limit)
+                _currentMaxPromptTokens = limit;
+
             ContextUsageChanged?.Invoke(this, new ContextUsageEventArgs
             {
-                SessionId       = _mainSession.SessionId,
-                InputTokens     = 0,
+                SessionId       = session.SessionId,
+                InputTokens     = _currentInputTokens,
                 MaxPromptTokens = _currentMaxPromptTokens,
             });
-            return true;
+            return CompactOutcome.Success;
         }
-        catch { return false; }
+        catch (OperationCanceledException)
+        {
+            if (_manualCompactAborted) return CompactOutcome.Aborted;
+            EmitStatus("Compaction timed out; asking the runtime to abandon it.");
+            await AbortCompactionAsync();
+            return CompactOutcome.TimedOut;
+        }
+        catch { return _manualCompactAborted ? CompactOutcome.Aborted : CompactOutcome.Failed; }
+    }
+
+    /// <summary>
+    /// Asks the runtime to abandon any compaction currently running on the main
+    /// session - both the manual kind GoPilot starts and the background kind the
+    /// runtime starts on its own once the context threshold is crossed.
+    /// Best-effort: a runtime that does not implement these calls simply throws
+    /// and is ignored. Returns true if either call reported that it stopped work.
+    /// </summary>
+    /// <remarks>
+    /// Session abort does not cancel compaction, so this is the only way out of a
+    /// long-running compaction on a slow local provider. Each call gets its own
+    /// short deadline: this is the escape hatch, and a runtime wedged badly enough
+    /// to need it is exactly the one that might not answer.
+    /// </remarks>
+    public async Task<bool> AbortCompactionAsync()
+    {
+        var session = _mainSession;
+        if (session == null) return false;
+
+        // Publish the intent *before* the round-trips, not the outcome after them.
+        // The abort RPC is what resolves the pending compaction, so the compact
+        // continuation can run the moment that call returns - while this method is
+        // still parked on the second RPC. Setting the flag afterwards would let the
+        // continuation read false and report Failed, which escalates into exactly
+        // the extra work the user pressed Stop to avoid. CompactSessionAsync clears
+        // the flag on entry, so a stale true cannot leak into a later compaction.
+        _manualCompactAborted = true;
+
+        var stopped = false;
+        try
+        {
+            using var manualCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+#pragma warning disable GHCP001
+            var manual = await session.Rpc.History.AbortManualCompactionAsync(manualCts.Token);
+#pragma warning restore GHCP001
+            stopped |= manual.Aborted;
+        }
+        catch { /* best-effort */ }
+
+        try
+        {
+            using var backgroundCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+#pragma warning disable GHCP001
+            var background = await session.Rpc.History.CancelBackgroundCompactionAsync(backgroundCts.Token);
+#pragma warning restore GHCP001
+            stopped |= background.Cancelled;
+        }
+        catch { /* best-effort */ }
+
+        // The runtime is not guaranteed to emit compaction_complete for a pass it
+        // was told to drop, so unwind the state here rather than waiting for an
+        // event that may never arrive and leaving the UI locked in "compacting".
+        // Only when something was actually stopped: if the runtime reports it
+        // stopped nothing, a compaction may still be running and clearing the flag
+        // would let GoPilot queue a turn behind it.
+        if (stopped) AbandonCompactionState();
+
+        return stopped;
     }
 
     /// <summary>
@@ -2666,6 +2929,7 @@ public sealed class CopilotService : IAsyncDisposable
     public void Reset()
     {
         StopKeepAlive();
+        AbandonCompactionState();
         _lifecycleSubscription?.Dispose();
         _lifecycleSubscription = null;
         _lifecycleDeletedSubscription?.Dispose();
@@ -2995,6 +3259,67 @@ public sealed class CopilotService : IAsyncDisposable
                 });
                 break;
 
+            case SessionCompactionStartEvent compactStart
+                when _mainSession == null || sessionId == _mainSession?.SessionId:
+            {
+                // The runtime is about to summarise the conversation with a
+                // full-context call to the configured provider. On the cloud that
+                // is a blip; on a local provider it can run for minutes while the
+                // session produces no other output, so the UI has to be told or it
+                // looks hung.
+                _compactionInFlight = true;
+
+                var startLimit = compactStart.Data.TokenLimit ?? _currentMaxPromptTokens;
+                if (startLimit > 0) _currentMaxPromptTokens = startLimit;
+
+                CompactionStateChanged?.Invoke(this, new CompactionEventArgs
+                {
+                    SessionId    = sessionId ?? "",
+                    InProgress   = true,
+                    Trigger      = compactStart.Data.Trigger?.Value ?? "",
+                    Model        = compactStart.Data.Model ?? "",
+                    TokensBefore = compactStart.Data.CurrentTokens ?? _currentInputTokens,
+                    TokenLimit   = startLimit,
+                });
+                break;
+            }
+
+            case SessionCompactionCompleteEvent compactDone
+                when _mainSession == null || sessionId == _mainSession?.SessionId:
+            {
+                _compactionInFlight = false;
+
+                var doneLimit = compactDone.Data.TokenLimit ?? _currentMaxPromptTokens;
+                if (doneLimit > 0) _currentMaxPromptTokens = doneLimit;
+
+                // Only trust the post-compaction figure when the pass succeeded;
+                // a failed compaction leaves the window exactly as it was.
+                if (compactDone.Data.Success && compactDone.Data.PostCompactionTokens is > 0 and var after)
+                {
+                    _currentInputTokens = after;
+                    ContextUsageChanged?.Invoke(this, new ContextUsageEventArgs
+                    {
+                        SessionId       = sessionId ?? "",
+                        InputTokens     = _currentInputTokens,
+                        MaxPromptTokens = _currentMaxPromptTokens,
+                    });
+                }
+
+                CompactionStateChanged?.Invoke(this, new CompactionEventArgs
+                {
+                    SessionId       = sessionId ?? "",
+                    InProgress      = false,
+                    Trigger         = compactDone.Data.Trigger?.Value ?? "",
+                    TokensBefore    = compactDone.Data.PreCompactionTokens ?? 0,
+                    TokensAfter     = compactDone.Data.PostCompactionTokens ?? 0,
+                    TokenLimit      = doneLimit,
+                    Success         = compactDone.Data.Success,
+                    Error           = compactDone.Data.Error ?? "",
+                    MessagesRemoved = compactDone.Data.MessagesRemoved ?? 0,
+                });
+                break;
+            }
+
             case SessionContextClearedEvent contextCleared
                 when _mainSession == null || sessionId == _mainSession?.SessionId:
             {
@@ -3263,6 +3588,7 @@ public sealed class CopilotService : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         StopKeepAlive();
+        AbandonCompactionState();
         _lifecycleSubscription?.Dispose();
         _lifecycleDeletedSubscription?.Dispose();
 
