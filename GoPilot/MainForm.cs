@@ -69,8 +69,16 @@ public partial class MainForm : Form
     // never rely on the count being exact across queued sends.
     private int _pendingCount = 0;
     private bool _reconnecting = false; // true while an automatic reconnect is in progress
-    private bool _autoRefreshPromptShown = false; // suppresses the 85% nag once per session
+    private bool _autoRefreshPromptShown = false; // suppresses the refresh nag once per session
     private bool _refreshInProgress = false; // gate to prevent overlapping Compact/Restart calls
+    // True between the runtime's session.compaction_start and compaction_complete.
+    // Compaction is a full-context provider call that produces no other output, so
+    // without this the UI shows nothing at all while it runs -- which on a slow
+    // local provider is indistinguishable from a hung session.
+    private bool _compacting = false;
+    // True while a long-running exclusive UI operation (a refresh, handoff or
+    // manual compaction) holds the window. Set only via SetSendingState.
+    private bool _uiBusy = false;
     private bool _cliUpdateChecked = false; // ensures the npm CLI check runs only once per session
     // Guards comboBoxEffort.SelectedIndexChanged from firing during programmatic
     // re-population (e.g. when the user switches model and we snap the effort
@@ -99,6 +107,38 @@ public partial class MainForm : Form
     // README once the session is created).
     private string? _pendingConnectFolder = null;
     private const int AutoRefreshThresholdPercent = 85;
+
+    /// <summary>
+    /// The prompt-window percentage at which GoPilot offers a manual refresh.
+    /// </summary>
+    /// <remarks>
+    /// This has to sit below the point where the runtime starts compacting on its
+    /// own, or the offer arrives when a background compaction is already under way
+    /// and accepting it stacks a second full-context summarisation on the same
+    /// provider. Only the local path retunes that runtime threshold, so only the
+    /// local path derives from it; the cloud path keeps its established 85% so
+    /// this fix does not quietly change behaviour for cloud users.
+    /// </remarks>
+    private double EffectiveAutoRefreshThresholdPercent
+    {
+        get
+        {
+            if (!_copilot.UseLocalProvider) return AutoRefreshThresholdPercent;
+
+            // Five points of margin is enough for the user to see and answer the
+            // prompt before the runtime acts on its own.
+            var runtimePct = _copilot.EffectiveBackgroundCompactionThreshold * 100.0;
+            return Math.Min(AutoRefreshThresholdPercent, runtimePct - 5.0);
+        }
+    }
+
+    /// <summary>
+    /// The prompt-window percentage at which the meter and the Refresh glyph start
+    /// warning. Derived from <see cref="EffectiveAutoRefreshThresholdPercent"/> so
+    /// the label colour, the button glyph and the automatic offer never disagree.
+    /// </summary>
+    private double EffectiveWarnThresholdPercent => EffectiveAutoRefreshThresholdPercent * 0.7;
+
     private GoPilotSettings _settings = new();
     private readonly SessionMetadataStore _sessionStore = new();
 
@@ -120,6 +160,16 @@ public partial class MainForm : Form
     private int _nextThinkingId = 0;
 
     private bool bIsFreeTierAutoOnly = false;
+
+    // Dedicated tooltip that surfaces the full model id when a dropdown row is
+    // hovered. Long model names are clipped by the fixed-width model combo, so a
+    // hover tooltip is the only way to read the untruncated name. Kept separate
+    // from toolTipMain (which drives the static SetToolTip hints) so the dynamic
+    // Show/Hide calls here do not interfere with those.
+    private readonly ToolTip _modelDropDownToolTip = new();
+    // Index of the dropdown row whose tooltip is currently shown, or -1 when
+    // none. Guards against re-showing the tooltip on every DrawItem repaint.
+    private int _modelDropDownToolTipIndex = -1;
 
     private readonly string? _startupFolder;
 
@@ -392,6 +442,15 @@ public partial class MainForm : Form
             catch { /* ignore */ }
         };
 
+        // Owner-draw the model combo so long model ids can be surfaced as a
+        // hover tooltip on the dropdown rows (see ComboBoxModel_DrawItem). The
+        // drawing also re-applies the dark theme that the default renderer would
+        // otherwise drop once the combo is owner-drawn.
+        comboBoxModel.DrawMode = DrawMode.OwnerDrawFixed;
+        comboBoxModel.DrawItem += ComboBoxModel_DrawItem;
+        comboBoxModel.DropDown += (_, _) => _modelDropDownToolTipIndex = -1;
+        comboBoxModel.DropDownClosed += ComboBoxModel_DropDownClosed;
+
         comboBoxEffort.SelectedIndexChanged += async (_, _) =>
         {
             if (_suspendEffortHandler) return;
@@ -442,6 +501,9 @@ public partial class MainForm : Form
 
         _copilot.ContextCleared += (_, args) =>
             InvokeOnUI(() => OnContextCleared(args));
+
+        _copilot.CompactionStateChanged += (_, args) =>
+            InvokeOnUI(() => OnCompactionStateChanged(args));
     }
 
     private void InvokeOnUI(Action action)
@@ -870,6 +932,76 @@ public partial class MainForm : Form
             LineAlignment = StringAlignment.Center
         };
         e.Graphics.DrawString(page.Text, tabCtrl.Font, fgBrush, bounds, sf);
+    }
+
+    /// <summary>
+    /// Owner-draws a single <see cref="comboBoxModel"/> row (both the always-
+    /// visible edit area and the dropdown list rows) using the dark theme, and
+    /// shows the full model id as a hover tooltip whenever a dropdown row is
+    /// under the pointer and its text is wide enough to be clipped.
+    /// </summary>
+    /// <remarks>
+    /// The default combo renderer paints list rows with the system window colour,
+    /// so switching to <see cref="DrawMode.OwnerDrawFixed"/> to obtain per-row
+    /// hover feedback means we must re-apply the combo's <see cref="AppTheme"/>
+    /// colours here or the dropdown would revert to a light background.
+    /// The tooltip is skipped for the edit area (identified by
+    /// <see cref="DrawItemState.ComboBoxEdit"/>) so it only appears while the
+    /// list is dropped down, and is only shown when the measured text is wider
+    /// than the row so short names that already fit are not annotated.
+    /// </remarks>
+    private void ComboBoxModel_DrawItem(object? sender, DrawItemEventArgs e)
+    {
+        if (e.Index < 0 || e.Index >= comboBoxModel.Items.Count)
+        {
+            using var emptyBrush = new SolidBrush(AppTheme.InputBox);
+            e.Graphics!.FillRectangle(emptyBrush, e.Bounds);
+            return;
+        }
+
+        string text = comboBoxModel.Items[e.Index]?.ToString() ?? string.Empty;
+        bool editArea = (e.State & DrawItemState.ComboBoxEdit) != 0;
+        bool highlighted = (e.State & DrawItemState.Selected) != 0 && !editArea;
+
+        Color bg = highlighted ? AppTheme.AccentBg : AppTheme.InputBox;
+        Color fg = highlighted ? AppTheme.AccentText : AppTheme.TextPrimary;
+
+        using (var bgBrush = new SolidBrush(bg))
+            e.Graphics!.FillRectangle(bgBrush, e.Bounds);
+
+        TextRenderer.DrawText(
+            e.Graphics!, text, comboBoxModel.Font, e.Bounds, fg,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+
+        if (highlighted)
+        {
+            bool clipped = TextRenderer.MeasureText(text, comboBoxModel.Font).Width > e.Bounds.Width;
+            if (clipped && _modelDropDownToolTipIndex != e.Index)
+            {
+                // Anchor the tooltip to the pointer so it lands on the hovered
+                // row regardless of whether the list opened above or below the
+                // combo. Only re-show when the row changes to avoid the flicker
+                // caused by DrawItem firing on every repaint of the same row.
+                _modelDropDownToolTipIndex = e.Index;
+                Point p = comboBoxModel.PointToClient(Cursor.Position);
+                _modelDropDownToolTip.Show(text, comboBoxModel, p.X + 16, p.Y + 4);
+            }
+            else if (!clipped)
+            {
+                _modelDropDownToolTip.Hide(comboBoxModel);
+                _modelDropDownToolTipIndex = -1;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Clears the model-id hover tooltip when the dropdown closes so it never
+    /// lingers over the collapsed combo.
+    /// </summary>
+    private void ComboBoxModel_DropDownClosed(object? sender, EventArgs e)
+    {
+        _modelDropDownToolTip.Hide(comboBoxModel);
+        _modelDropDownToolTipIndex = -1;
     }
 
     /// <summary>
@@ -1303,6 +1435,20 @@ public partial class MainForm : Form
 
     private async Task StopAsync()
     {
+        // A compaction is not a turn: session abort does not touch it, and it can
+        // be running concurrently with one (that is what the background threshold
+        // is for), so deal with it first and then carry on to the turn itself.
+        if (_compacting)
+        {
+            AppendOutput("\r\nSTOP. Abandoning the history compaction.\r\n", AppTheme.ColorError);
+            var aborted = await _copilot.AbortCompactionAsync();
+            AppendOutput(
+                aborted
+                    ? "[STOPPED] Compaction abandoned; the context window is unchanged.\r\n\r\n"
+                    : "[STOP] The runtime did not report the compaction as abandoned; it may still finish on its own.\r\n\r\n",
+                AppTheme.ColorError);
+        }
+
         // No-op when nothing is in flight -- clicking Stop on an idle session
         // should not paint a phantom STOP / Halted pair.
         if (_pendingCount <= 0) return;
@@ -1512,10 +1658,15 @@ public partial class MainForm : Form
 
         // If a UI option change scheduled a deferred handoff, run it now BEFORE
         // the user's prompt so context survives mode/fleet switches automatically.
+        // Skipped while a compaction is running: the handoff's summary is itself a
+        // full-context turn, and leaving the reason in place keeps the promise for
+        // the next send instead of dropping it silently.
         if (_pendingHandoffReason != null
             && _copilot.IsConnected
             && _mainSessionId != null
-            && !_refreshInProgress)
+            && !_refreshInProgress
+            && !_compacting
+            && !_copilot.IsCompacting)
         {
             var reason = _pendingHandoffReason;
             _pendingHandoffReason = null;
@@ -1841,9 +1992,9 @@ public partial class MainForm : Form
         else
         {
             text = $"Prompt: {FormatTokens(input)} / {FormatTokens(max)} ({pct:0}%)";
-            color = pct < 60 ? Color.FromArgb(148, 220, 148)  // green
-                  : pct < 85 ? Color.FromArgb(232, 200, 110)  // amber
-                              : Color.FromArgb(240, 120, 120); // red
+            color = pct < EffectiveWarnThresholdPercent     ? Color.FromArgb(148, 220, 148)  // green
+                  : pct < EffectiveAutoRefreshThresholdPercent ? Color.FromArgb(232, 200, 110)  // amber
+                                                              : Color.FromArgb(240, 120, 120); // red
             barColor = color;
             barValue = (int)Math.Clamp(Math.Round(pct), 0, 100);
         }
@@ -1858,13 +2009,23 @@ public partial class MainForm : Form
         }
         else if (_copilot.UseLocalProvider && max <= 0)
         {
-            // Local provider didn't report prompt-window limits: hide the context meter and label entirely
+            // The local server advertised no window and none was configured, so
+            // there is no denominator and therefore no percentage, no bar, and no
+            // automatic refresh prompt. Show the raw count rather than hiding the
+            // meter: it is the only warning the user gets that the window is
+            // filling, and it makes the missing limit visible instead of silent.
             toolStripProgressBarContext.Visible = false;
-            toolStripStatusLabelContext.Visible = false;
-            toolStripStatusLabelContext.Text = string.Empty;
-            toolStripStatusLabelContext.ToolTipText = string.Empty;
+            toolStripStatusLabelContext.Visible = true;
+            toolStripStatusLabelContext.Text = input > 0
+                ? $"Prompt: {FormatTokens(input)} / ?"
+                : "Prompt: \u2014 / ?";
+            toolStripStatusLabelContext.ForeColor = Color.FromArgb(232, 200, 110); // amber
+            toolStripStatusLabelContext.ToolTipText =
+                "The local provider reported no context-window size, so usage cannot be "
+              + "shown as a percentage and GoPilot cannot warn you before the window fills. "
+              + "Set a context size in the AI Service dialog to enable the meter.";
             toolStripStatusLabelAic.Visible = false;
-            toolTipMain.SetToolTip(statusStrip, string.Empty);
+            toolTipMain.SetToolTip(statusStrip, toolStripStatusLabelContext.ToolTipText);
         }
         else
         {
@@ -1885,11 +2046,14 @@ public partial class MainForm : Form
         UpdateRefreshButtonAffordance(max > 0 ? pct : 0);
 
         // Auto-prompt at the configured threshold, once per session, and only when
-        // we are not already mid-refresh or sending a turn.
+        // we are not already mid-refresh, mid-compaction, or sending a turn.
         if (!_autoRefreshPromptShown
             && !_refreshInProgress
+            && !_compacting
+            && !_copilot.IsCompacting
             && _pendingCount == 0
-            && pct >= AutoRefreshThresholdPercent
+            && max > 0
+            && pct >= EffectiveAutoRefreshThresholdPercent
             && _copilot.IsConnected
             && _mainSessionId != null)
         {
@@ -1907,19 +2071,25 @@ public partial class MainForm : Form
     }
 
     // Decorates the Refresh button with a glyph and tooltip that escalates with
-    // context-window pressure: idle (\ud83d\udca4) below 60%, warning (\u26a0\ufe0f)
-    // at 60%, critical (\ud83d\udd25) at 85%. Keeps the trailing dropdown caret.
+    // context-window pressure: idle (\ud83d\udca4) well clear of the limit, warning
+    // (\u26a0\ufe0f) as it approaches, critical (\ud83d\udd25) once GoPilot would
+    // offer a refresh. The critical point tracks the same derived threshold as the
+    // automatic prompt so the button and the dialog never disagree.
+    // Keeps the trailing dropdown caret.
     private void UpdateRefreshButtonAffordance(double pct)
     {
         string glyph;
         string tip;
 
-        if (pct >= 85)
+        var critical = EffectiveAutoRefreshThresholdPercent;
+        var warning  = EffectiveWarnThresholdPercent;
+
+        if (pct >= critical)
         {
             glyph = "\ud83d\udd25"; // fire
             tip = $"Prompt window at {pct:0}% \u2014 strongly recommend Compact or Restart now.";
         }
-        else if (pct >= 60)
+        else if (pct >= warning)
         {
             glyph = "\u26a0\ufe0f"; // warning sign
             tip = $"Prompt window at {pct:0}% \u2014 consider Compact or Restart soon.";
@@ -1941,13 +2111,17 @@ public partial class MainForm : Form
         var pct = _copilot.CurrentMaxPromptTokens > 0
             ? (_copilot.CurrentInputTokens / _copilot.CurrentMaxPromptTokens) * 100.0
             : 0;
+        var runtimePct = _copilot.EffectiveBackgroundCompactionThreshold * 100.0;
 
         var result = MessageBox.Show(this,
             $"Prompt window is at {pct:0}% — accuracy may start to degrade.\r\n\r\n" +
+            $"At {runtimePct:0}% the runtime compacts the history by itself. That is a " +
+            "full-context call to the model, so on a local provider it can take minutes " +
+            "during which the session produces no output.\r\n\r\n" +
             "Refresh now?\r\n\r\n" +
             "  Yes  – Compact in place (fast, keeps session ID)\r\n" +
             "  No   – Restart with summary (clean window, new session)\r\n" +
-            "  Cancel – Don't ask again this session",
+            "  Cancel \u2013 Don't ask again this session (the runtime will still compact on its own)",
             "Prompt Window Filling Up",
             MessageBoxButtons.YesNoCancel,
             MessageBoxIcon.Warning,
@@ -2043,8 +2217,11 @@ public partial class MainForm : Form
         {
             menuSessionRefresh.Text = oldText;
             menuSessionRefresh.Enabled = true;
-            SetSendingState(false);
+            // Clear the gate before the repaint: UpdateWorkingState reads
+            // _refreshInProgress, so repainting first would leave Send disabled with
+            // nothing scheduled to recompute it.
             _refreshInProgress = false;
+            SetSendingState(false);
         }
     }
 
@@ -2062,6 +2239,62 @@ public partial class MainForm : Form
         AppendOutput(
             $"[Context cleared] {args.MessagesCleared} conversation messages dropped, session ID unchanged.\r\n",
             AppTheme.ColorMeta);
+    }
+
+    /// <summary>
+    /// Reports the runtime's own LLM-powered history compaction in the transcript
+    /// and the status bar.
+    /// </summary>
+    /// <remarks>
+    /// Compaction emits no assistant output of its own, so before this the window
+    /// simply went quiet for as long as the summarisation took. That is seconds
+    /// against the cloud but minutes against a local provider, where the
+    /// compaction call also contends with the session's own requests -- the exact
+    /// shape of the "stuck after a long session" complaint.
+    /// </remarks>
+    private void OnCompactionStateChanged(CompactionEventArgs args)
+    {
+        _compacting = args.InProgress;
+
+        if (args.InProgress)
+        {
+            var trigger = string.IsNullOrWhiteSpace(args.Trigger) ? "threshold" : args.Trigger;
+            var scale = args.TokenLimit > 0
+                ? $" ({FormatTokens(args.TokensBefore)} / {FormatTokens(args.TokenLimit)} tokens)"
+                : "";
+            AppendOutput(
+                $"\r\n\U0001f4a4 Compacting conversation history \u2014 {trigger}{scale}. " +
+                "This is a full-context call to the model and may take a while; Stop will abandon it.\r\n\r\n",
+                AppTheme.ColorMeta);
+        }
+        else if (args.Abandoned)
+        {
+            // Cancelled, or its session was replaced underneath it. There is no
+            // outcome to report - just unwind so the UI does not stay locked in
+            // the compacting state waiting for a completion that will never come.
+        }
+        else if (args.Success)
+        {
+            var freed = args.TokensBefore > 0 && args.TokensAfter > 0
+                ? $"{FormatTokens(args.TokensBefore)} \u2192 {FormatTokens(args.TokensAfter)} tokens, "
+                : "";
+            AppendOutput(
+                $"\u2500\u2500\u2500\u2500\u2500\u2500\u2500 history compacted ({freed}" +
+                $"{args.MessagesRemoved} messages removed) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\r\n\r\n",
+                AppTheme.ColorMeta);
+            // The window has headroom again, so allow a fresh nag if it refills.
+            _autoRefreshPromptShown = false;
+        }
+        else
+        {
+            var why = string.IsNullOrWhiteSpace(args.Error) ? "no reason given" : args.Error;
+            AppendOutput(
+                $"\u26a0\ufe0f Compaction failed ({why}). The context window is unchanged \u2014 " +
+                "use Session \u25b8 Refresh to free space manually.\r\n\r\n",
+                AppTheme.ColorError);
+        }
+
+        UpdateWorkingState();
     }
 
     /// <summary>
@@ -2120,6 +2353,7 @@ public partial class MainForm : Form
     private async Task RunClearContextAsync()
     {
         if (_refreshInProgress) return;
+        if (BlockedByRuntimeCompaction()) return;
         if (!_copilot.IsConnected || _mainSessionId == null)
         {
             MessageBox.Show(this, "No active session to refresh. Open a folder and send at least one message first.",
@@ -2142,8 +2376,11 @@ public partial class MainForm : Form
         {
             menuSessionRefresh.Text = oldText;
             menuSessionRefresh.Enabled = true;
-            SetSendingState(false);
+            // Clear the gate before the repaint: UpdateWorkingState reads
+            // _refreshInProgress, so repainting first would leave Send disabled with
+            // nothing scheduled to recompute it.
             _refreshInProgress = false;
+            SetSendingState(false);
         }
 
         if (!cleared)
@@ -2186,9 +2423,27 @@ public partial class MainForm : Form
         }
     }
 
+    /// <summary>
+    /// Blocks a manual refresh while the runtime is already compacting. Starting
+    /// one anyway would queue a second full-context summarisation behind the
+    /// first, which on a local provider is how a slow session becomes a stalled
+    /// one.
+    /// </summary>
+    private bool BlockedByRuntimeCompaction()
+    {
+        if (!_compacting && !_copilot.IsCompacting) return false;
+
+        MessageBox.Show(this,
+            "The runtime is already compacting this session's history.\r\n\r\n" +
+            "Wait for it to finish, or press Stop to abandon it.",
+            "Compaction In Progress", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        return true;
+    }
+
     private async Task RunCompactAsync()
     {
         if (_refreshInProgress) return;
+        if (BlockedByRuntimeCompaction()) return;
         if (!_copilot.IsConnected || _mainSessionId == null)
         {
             MessageBox.Show(this, "No active session to refresh. Open a folder and send at least one message first.",
@@ -2206,11 +2461,29 @@ public partial class MainForm : Form
         {
             AppendOutput("\r\n💤 Compacting session in place…\r\n\r\n", AppTheme.ColorMeta);
 
-            var ok = await _copilot.CompactSessionAsync();
-            if (ok)
+            var outcome = await _copilot.CompactSessionAsync();
+            if (outcome == CopilotService.CompactOutcome.Success)
             {
                 AppendOutput("─────────── session refreshed ───────────\r\n\r\n", AppTheme.ColorMeta);
                 _autoRefreshPromptShown = false; // allow another nag if context fills again
+            }
+            else if (outcome == CopilotService.CompactOutcome.Aborted)
+            {
+                // The user pressed Stop. Escalating would start exactly the extra
+                // work they just asked to stop.
+                AppendOutput("[Compact abandoned at your request]\r\n\r\n", AppTheme.ColorMeta);
+                return;
+            }
+            else if (outcome == CopilotService.CompactOutcome.TimedOut)
+            {
+                // The runtime may still be summarising. Escalating here would queue
+                // a second full-context turn behind the first, which is exactly the
+                // pile-up that stalls a local provider. Stop and let the user decide.
+                AppendOutput(
+                    "[Compact timed out - the runtime may still be compacting. " +
+                    "Wait for it to finish, or press Stop to abandon it, before refreshing again.]\r\n\r\n",
+                    AppTheme.ColorError);
+                return;
             }
             else
             {
@@ -2245,8 +2518,11 @@ public partial class MainForm : Form
         {
             menuSessionRefresh.Text = oldText;
             menuSessionRefresh.Enabled = true;
-            SetSendingState(false);
+            // Clear the gate before the repaint: UpdateWorkingState reads
+            // _refreshInProgress, so repainting first would leave Send disabled with
+            // nothing scheduled to recompute it.
             _refreshInProgress = false;
+            SetSendingState(false);
         }
     }
 
@@ -2301,6 +2577,13 @@ public partial class MainForm : Form
     private async Task<bool> PerformHandoffAsync(string reason, bool waitForSeedAck)
     {
         if (_refreshInProgress) return false;
+        // The handoff summary is itself a full-context turn, so it must not race
+        // the runtime's own compaction of the same conversation.
+        if (_compacting || _copilot.IsCompacting)
+        {
+            if (!waitForSeedAck) BlockedByRuntimeCompaction();
+            return false;
+        }
         if (!_copilot.IsConnected || _mainSessionId == null || _copilot.WorkingDirectory == null)
         {
             // Caller-driven UI flow (manual button) shows a dialog; automatic flow stays silent.
@@ -2363,8 +2646,11 @@ public partial class MainForm : Form
         {
             menuSessionRefresh.Text = oldText;
             menuSessionRefresh.Enabled = true;
-            SetSendingState(false);
+            // Clear the gate before the repaint: UpdateWorkingState reads
+            // _refreshInProgress, so repainting first would leave Send disabled with
+            // nothing scheduled to recompute it.
             _refreshInProgress = false;
+            SetSendingState(false);
         }
     }
 
@@ -4551,6 +4837,7 @@ public partial class MainForm : Form
         _subAgentWatchdog.Stop();
         _pendingCount = 0;
         _mainSessionIdle = false;
+        _compacting = false;
         _totalBytesReceived = 0;
         _completedAgentCount = 0;
         _activeSubAgents.Clear();
@@ -5481,14 +5768,27 @@ public partial class MainForm : Form
         // state would create a session whose ID falls back to the literal
         // "GoPilot" prefix and whose workspaceFolder is permanently blank.
         buttonSend.Enabled = _copilot.IsConnected
+            && !_compacting
+            && !_refreshInProgress
+            && !_uiBusy
             && !string.IsNullOrEmpty(_copilot.WorkingDirectory);
-        buttonStop.Enabled = working;
+        // Stop has to stay live during a compaction: it is the only way to
+        // abandon a summarisation that is taking too long on a slow provider.
+        buttonStop.Enabled = working || _compacting || _uiBusy;
 
         string status;
-        if (working)
+        if (_compacting)
+        {
+            status = "Compacting context\u2026";
+        }
+        else if (working)
         {
             var kb = _totalBytesReceived > 0 ? $" · {_totalBytesReceived / 1024:F1} KiB" : "";
             status = $"Working…{kb}";
+        }
+        else if (_uiBusy)
+        {
+            status = "Working\u2026";
         }
         else
         {
@@ -5501,7 +5801,15 @@ public partial class MainForm : Form
     private void UpdateAgentStatus()
     {
         string msg;
-        if (_pendingCount == 0)
+        if (_compacting)
+        {
+            msg = "Compacting conversation history\u2026";
+        }
+        else if (_pendingCount == 0 && _uiBusy)
+        {
+            msg = "Working\u2026";
+        }
+        else if (_pendingCount == 0)
         {
             msg = "Ready for next command";
         }
@@ -5528,15 +5836,14 @@ public partial class MainForm : Form
     }
 
     // Used by long-running operations (e.g. session refresh handoff) which need
-    // to block the UI exclusively
+    // to block the UI exclusively. Routes through UpdateWorkingState so there is
+    // exactly one formula for the Send/Stop buttons and the status text: setting
+    // them here independently used to re-enable Send and disable Stop in the
+    // middle of a background compaction, defeating the only escape hatch from it.
     private void SetSendingState(bool isSending)
     {
-        buttonSend.Enabled = !isSending
-            && _copilot.IsConnected
-            && !string.IsNullOrEmpty(_copilot.WorkingDirectory);
-        buttonStop.Enabled = isSending || _pendingCount > 0;
-        toolStripStatusLabelConnection.Text = isSending ? "Working…" :
-            (_copilot.IsConnected ? "Connected" : "Not connected");
+        _uiBusy = isSending;
+        UpdateWorkingState();
     }
 
     private void UpdateConnectionStatus(string status)

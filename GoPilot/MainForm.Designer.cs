@@ -265,7 +265,6 @@ partial class MainForm
         // buttonOptions
         // 
         buttonOptions.BackColor = Color.FromArgb(86, 86, 86);
-        buttonOptions.Enabled = true;
         buttonOptions.FlatAppearance.BorderColor = Color.FromArgb(108, 108, 108);
         buttonOptions.FlatStyle = FlatStyle.Flat;
         buttonOptions.Font = new Font("Segoe UI", 9F);
@@ -283,7 +282,7 @@ partial class MainForm
         labelModel.AutoSize = true;
         labelModel.Font = new Font("Segoe UI", 9F);
         labelModel.ForeColor = Color.FromArgb(218, 218, 218);
-        labelModel.Location = new Point(7, 11);
+        labelModel.Location = new Point(4, 11);
         labelModel.Name = "labelModel";
         labelModel.Size = new Size(44, 15);
         labelModel.TabIndex = 1;
@@ -293,14 +292,13 @@ partial class MainForm
         // 
         comboBoxModel.BackColor = Color.FromArgb(52, 52, 52);
         comboBoxModel.DropDownStyle = ComboBoxStyle.DropDownList;
-        comboBoxModel.Enabled = true;
         comboBoxModel.FlatStyle = FlatStyle.Flat;
         comboBoxModel.Font = new Font("Segoe UI", 9F);
         comboBoxModel.ForeColor = Color.FromArgb(218, 218, 218);
         comboBoxModel.FormattingEnabled = true;
-        comboBoxModel.Location = new Point(55, 7);
+        comboBoxModel.Location = new Point(48, 7);
         comboBoxModel.Name = "comboBoxModel";
-        comboBoxModel.Size = new Size(184, 23);
+        comboBoxModel.Size = new Size(253, 23);
         comboBoxModel.TabIndex = 2;
         // 
         // labelMode
@@ -308,7 +306,7 @@ partial class MainForm
         labelMode.AutoSize = true;
         labelMode.Font = new Font("Segoe UI", 9F);
         labelMode.ForeColor = Color.FromArgb(218, 218, 218);
-        labelMode.Location = new Point(251, 11);
+        labelMode.Location = new Point(307, 11);
         labelMode.Name = "labelMode";
         labelMode.Size = new Size(41, 15);
         labelMode.TabIndex = 7;
@@ -318,14 +316,13 @@ partial class MainForm
         // 
         comboBoxMode.BackColor = Color.FromArgb(52, 52, 52);
         comboBoxMode.DropDownStyle = ComboBoxStyle.DropDownList;
-        comboBoxMode.Enabled = true;
         comboBoxMode.FlatStyle = FlatStyle.Flat;
         comboBoxMode.Font = new Font("Segoe UI", 9F);
         comboBoxMode.ForeColor = Color.FromArgb(218, 218, 218);
         comboBoxMode.FormattingEnabled = true;
-        comboBoxMode.Location = new Point(299, 7);
+        comboBoxMode.Location = new Point(354, 7);
         comboBoxMode.Name = "comboBoxMode";
-        comboBoxMode.Size = new Size(92, 23);
+        comboBoxMode.Size = new Size(75, 23);
         comboBoxMode.TabIndex = 8;
         toolTipMain.SetToolTip(comboBoxMode, "Standard: normal chat  |  Plan: plan before acting  |  Autopilot: fully autonomous");
         // 
@@ -334,7 +331,7 @@ partial class MainForm
         labelEffort.AutoSize = true;
         labelEffort.Font = new Font("Segoe UI", 9F);
         labelEffort.ForeColor = Color.FromArgb(218, 218, 218);
-        labelEffort.Location = new Point(401, 11);
+        labelEffort.Location = new Point(439, 11);
         labelEffort.Name = "labelEffort";
         labelEffort.Size = new Size(39, 15);
         labelEffort.TabIndex = 9;
@@ -349,9 +346,9 @@ partial class MainForm
         comboBoxEffort.Font = new Font("Segoe UI", 9F);
         comboBoxEffort.ForeColor = Color.FromArgb(218, 218, 218);
         comboBoxEffort.FormattingEnabled = true;
-        comboBoxEffort.Location = new Point(443, 7);
+        comboBoxEffort.Location = new Point(481, 7);
         comboBoxEffort.Name = "comboBoxEffort";
-        comboBoxEffort.Size = new Size(81, 23);
+        comboBoxEffort.Size = new Size(65, 23);
         comboBoxEffort.TabIndex = 10;
         toolTipMain.SetToolTip(comboBoxEffort, "Reasoning effort for the selected model. Disabled when the model does not advertise reasoning-effort support.");
         // 
@@ -615,7 +612,7 @@ partial class MainForm
         menuSessionRefreshClear.ForeColor = Color.FromArgb(218, 218, 218);
         menuSessionRefreshClear.Name = "menuSessionRefreshClear";
         menuSessionRefreshClear.Size = new Size(288, 22);
-        menuSessionRefreshClear.Text = "🧹 C&lear context (keeps session)";
+        menuSessionRefreshClear.Text = "\U0001f9f9 C&lear context (keeps session)";
         menuSessionRefreshClear.ToolTipText = "Ask the model for a resume note, then drop the conversation and continue in the same session with a fresh window seeded from that note.";
         // 
         // menuSessionRefreshRestart

@@ -14,7 +14,8 @@ A Windows desktop GUI for the [GitHub Copilot SDK](libs/copilot-sdk). GoPilot wr
 - Model, Mode, Effort, Fleet, and Auto-approve choices persist between launches.
 - Rendered and Raw output tabs. Rendered handles Markdown, Mermaid, and syntax-highlighted code.
 - Pan, zoom, and fullscreen for oversized diagrams, code blocks, and tables.
-- Context meter with an offer to compact or restart at 85% usage.
+- Context meter with an offer to compact or restart at 85% usage (earlier on a local provider).
+- Automatic background compaction is reported in the transcript and the status bar, so a long summarisation pass on a local model no longer looks like a hung session.
 - Manual session refresh: compact, restart with summary, or fresh start.
 - Skill Tree: ordered folders that contribute `skills/`, `agents/`, `prompts/`, and `gopilot-instructions.md` to every session.
 - Custom agents and skills auto-discovered and insertable as `@agent:name` / `@skill:name`.
@@ -153,7 +154,7 @@ For a local server you supply:
 | Port | The server's port. |
 | API path | The OpenAI base path. Lemonade uses `/api/v1`; llama.cpp uses `/v1`. Defaults to `/api/v1`. |
 | API key | Forwarded as a Bearer token. Most local servers accept any non-empty string; defaults to `lemonade`. |
-| Context size | The model's prompt window in tokens, used to drive the context meter and auto-compaction. Leave blank to let GoPilot ask the server. |
+| Context size | The model's prompt window in tokens, used to drive the context meter and auto-compaction. Leave blank to let GoPilot ask the server. If neither the server nor this field supplies a size, the meter shows a raw token count with no percentage and the automatic refresh offer cannot fire. |
 | Hide these built-in tools | A comma-separated list of built-in tools withheld from the session, to buy back prompt window on a small model. See [Trimming built-in tools](#trimming-built-in-tools). |
 
 The dialog also has a **Filter LLM** section - the same local prompt-reduction/summarizing pre-pass described under [Local LLM Filter](#local-llm-filter). Tick the box to enable it and use **Configure...** to pick the Ollama host, model, and confidence threshold. (The **Options ▸ 🧠 Local LLM filter** toggle remains available too.)
@@ -195,9 +196,44 @@ Notes:
 | 🔄 Restart with summary | Saves a one-page summary to `%LOCALAPPDATA%\GoPilot\workspaces\<key>\dreams\`, opens a fresh session, seeds it with the summary. |
 | 🆕 Fresh start | Discards all context and opens a brand-new session in the same folder. |
 
-At 85% context usage GoPilot offers to compact or restart automatically.
+At 85% context usage GoPilot offers to compact or restart automatically. For a
+local provider the offer arrives earlier - see
+[Automatic compaction](#automatic-compaction) below.
 
 Compact escalates on its own: if `session.history.compact` fails, GoPilot tries Clear context, and only falls back to Restart with summary if that fails too. Each step down the chain keeps less of the session, so the cheapest one that works is the one that runs.
+
+Manual compaction is bounded by a ten-minute timeout, after which GoPilot asks
+the runtime to abandon it. **Stop** abandons a compaction at any point.
+
+### Automatic compaction
+
+The Copilot runtime compacts long sessions by itself, without being asked. GoPilot
+reports both the start and the end of every such pass in the transcript and shows
+**Compacting context...** in the status bar while one runs.
+
+This matters most on a local provider. Compaction is a full-context call to the
+same model that serves the conversation, so it is slow and it competes with the
+session's own requests for one GPU. Before it was surfaced, a background
+compaction looked exactly like a hung session: no output, no status change, for
+minutes at a time.
+
+| Threshold | Cloud | Local provider |
+|---|---|---|
+| Background compaction starts | 80% | 65% |
+| Session blocks until compaction finishes | 95% | 95% |
+| GoPilot offers a manual refresh | 85% (unchanged) | 60% |
+
+The local pair is widened deliberately. The runtime's default 15-point gap between
+"start compacting" and "block until compaction finishes" is routinely consumed
+before a local model returns a summary; starting at 65% roughly doubles the
+wall-clock time the asynchronous pass has to land before it turns into a stall.
+
+GoPilot's own offer sits below the point where the runtime acts on a local
+provider, so accepting it can never stack a second full-context summarisation on
+top of one already running. While a compaction is in flight, Compact, Clear
+context and Restart with summary all decline rather than queue, and **Stop**
+abandons the compaction. On the cloud path the runtime's thresholds and GoPilot's
+85% offer are both left exactly as they were.
 
 ### Clear context
 
@@ -356,7 +392,7 @@ Menu items with an underlined letter can be triggered with Alt+letter once their
 - Open a folder and ask "What does this project do?" to get oriented.
 - Use Plan mode for big tasks so you can review the plan before Copilot acts.
 - Summarize before switching topics (Session ▸ 📝 Summarize).
-- Watch the context meter. Amber at 60%, auto-refresh offer at 85%.
+- Watch the context meter. Amber approaching the limit, auto-refresh offer at 85% (60% on a local provider).
 - Resume earlier work via Session ▸ 📋 Past Sessions...
 - Switch to the Raw tab if a rendered block is not displaying as expected.
 - For large Mermaid charts, hover and click Full or use the wheel to zoom.
